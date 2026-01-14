@@ -1,0 +1,21 @@
+# macOS
+.DS_Store
+
+# Source/reference files (not part of the addon)
+weakaura.json
+*.png
+*.jpg
+*.jpeg
+
+# Development files
+PLAN.md
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Misc
+*.log
+*.tmp
