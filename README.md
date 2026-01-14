@@ -21,6 +21,8 @@ A World of Warcraft addon for **Classic Mists of Pandaria (5.5.3)** that tracks 
 - **Customizable display** - Toggle individual bosses, filter by level, show only unkilled
 - **Class-colored names** - Easy identification of character classes
 - **Movable & scalable UI** - Position and size the window to your preference
+- **Minimap button** - Quick access to toggle the window (left-click) or settings (right-click)
+- **Settings panel** - GUI for all options, no need to memorize slash commands
 
 ## Installation
 
@@ -139,11 +141,4 @@ This addon is provided as-is for personal use. Feel free to modify for your own 
 
 ## Changelog
 
-### v1.0.0
-- Initial release
-- Track all 6 MoP world bosses
-- Character grouping by realm
-- Delete/ban character functionality
-- Configurable boss tracking
-- Level filtering
-- Weekly reset detection
+See [CHANGELOG.md](CHANGELOG.md) for detailed version history.

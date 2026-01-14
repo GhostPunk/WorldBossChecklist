@@ -2,7 +2,7 @@
 ## Title: World Boss Checklist
 ## Notes: Track world boss kills across all your characters
 ## Author: Claude (based on Merfin's WeakAura)
-## Version: 1.0.0
+## Version: 1.0.1
 ## SavedVariables: WorldBossChecklistDB
 
 Data.lua

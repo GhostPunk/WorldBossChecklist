@@ -1,16 +1,12 @@
 local addonName, addon = ...
 
-local FRAME_WIDTH = 400
-local FRAME_MIN_HEIGHT = 60
 local ROW_HEIGHT = 18
 local HEADER_HEIGHT = 24
-local BOSS_COLUMN_WIDTH = 35
+local BOSS_COLUMN_WIDTH = 65
 local NAME_COLUMN_WIDTH = 150
 
 -- Main frame
 local mainFrame = nil
-local contentFrame = nil
-local scrollFrame = nil
 local rows = {}
 local contextMenu = nil
 
@@ -28,10 +24,10 @@ local function GetClassColor(class)
     return {r = 1, g = 1, b = 1}
 end
 
--- Create the main frame
+-- Create the main frame (no scroll, dynamic height)
 local function CreateMainFrame()
     local frame = CreateFrame("Frame", "WorldBossChecklistFrame", UIParent, "BackdropTemplate")
-    frame:SetSize(FRAME_WIDTH, 300)
+    frame:SetSize(500, 200)
     frame:SetPoint("CENTER")
     frame:SetMovable(true)
     frame:SetClampedToScreen(true)
@@ -44,7 +40,7 @@ local function CreateMainFrame()
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         edgeSize = 1,
     })
-    frame:SetBackdropColor(0, 0, 0, 0.8)
+    frame:SetBackdropColor(0, 0, 0, 0.85)
     frame:SetBackdropBorderColor(0, 0, 0, 1)
 
     -- Make draggable
@@ -68,7 +64,7 @@ local function CreateMainFrame()
     header:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
     })
-    header:SetBackdropColor(0.1, 0.1, 0.1, 0.9)
+    header:SetBackdropColor(0.1, 0.1, 0.1, 0.95)
     frame.header = header
 
     -- Title
@@ -90,29 +86,30 @@ local function CreateMainFrame()
     end)
     frame.closeBtn = closeBtn
 
-    -- Scroll frame container
-    local scrollContainer = CreateFrame("Frame", nil, frame)
-    scrollContainer:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, 0)
-    scrollContainer:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
-    frame.scrollContainer = scrollContainer
+    -- Settings button (gear icon)
+    local settingsBtn = CreateFrame("Button", nil, header)
+    settingsBtn:SetSize(16, 16)
+    settingsBtn:SetPoint("RIGHT", closeBtn, "LEFT", -4, 0)
+    settingsBtn:SetNormalAtlas("Garr_Building-AddFollowerPlus")
+    settingsBtn:SetHighlightAtlas("Garr_Building-AddFollowerPlus")
+    settingsBtn:SetScript("OnClick", function()
+        addon:ToggleSettingsPanel()
+    end)
+    settingsBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:AddLine("Settings", 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    settingsBtn:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    frame.settingsBtn = settingsBtn
 
-    -- Scroll frame
-    local scroll = CreateFrame("ScrollFrame", "WorldBossChecklistScrollFrame", scrollContainer, "UIPanelScrollFrameTemplate")
-    scroll:SetPoint("TOPLEFT", scrollContainer, "TOPLEFT", 4, -4)
-    scroll:SetPoint("BOTTOMRIGHT", scrollContainer, "BOTTOMRIGHT", -24, 4)
-    frame.scrollFrame = scroll
-
-    -- Content frame (inside scroll)
-    local content = CreateFrame("Frame", nil, scroll)
-    content:SetSize(FRAME_WIDTH - 28, 100)
-    scroll:SetScrollChild(content)
+    -- Content frame (direct child, no scroll)
+    local content = CreateFrame("Frame", nil, frame)
+    content:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 4, 0)
+    content:SetPoint("TOPRIGHT", header, "BOTTOMRIGHT", -4, 0)
     frame.contentFrame = content
-
-    -- Hide scroll bar when not needed
-    local scrollBar = scroll.ScrollBar or _G["WorldBossChecklistScrollFrameScrollBar"]
-    if scrollBar then
-        scrollBar:SetValue(0)
-    end
 
     return frame
 end
@@ -208,8 +205,8 @@ end
 local function CreateBossHeaders(parent)
     local headers = CreateFrame("Frame", nil, parent)
     headers:SetHeight(ROW_HEIGHT)
-    headers:SetPoint("TOPLEFT", parent.header, "BOTTOMLEFT", 0, 0)
-    headers:SetPoint("TOPRIGHT", parent.header, "BOTTOMRIGHT", 0, 0)
+    headers:SetPoint("TOPLEFT", parent.header, "BOTTOMLEFT", 4, 0)
+    headers:SetPoint("TOPRIGHT", parent.header, "BOTTOMRIGHT", -4, 0)
 
     headers.bg = headers:CreateTexture(nil, "BACKGROUND")
     headers.bg:SetAllPoints()
@@ -222,15 +219,19 @@ local function CreateBossHeaders(parent)
     headers.charLabel:SetTextColor(0.7, 0.7, 0.7)
 
     headers.bossLabels = {}
+    headers.tooltipFrames = {}
 
     return headers
 end
 
 -- Update boss column headers
 local function UpdateBossHeaders(headers)
-    -- Clear old labels
+    -- Clear old labels and tooltip frames
     for _, label in pairs(headers.bossLabels) do
         label:Hide()
+    end
+    for _, frame in pairs(headers.tooltipFrames) do
+        frame:Hide()
     end
 
     local enabledBosses = addon:GetEnabledBosses()
@@ -243,14 +244,20 @@ local function UpdateBossHeaders(headers)
             headers.bossLabels[i] = label
         end
 
+        label:ClearAllPoints()
         label:SetPoint("LEFT", headers, "LEFT", xOffset, 0)
         label:SetWidth(BOSS_COLUMN_WIDTH)
-        label:SetText(boss.abbrev)
+        label:SetText(boss.name)  -- Full boss name
         label:SetTextColor(0.7, 0.7, 0.7)
         label:Show()
 
-        -- Tooltip
-        local tooltipFrame = CreateFrame("Frame", nil, headers)
+        -- Tooltip frame
+        local tooltipFrame = headers.tooltipFrames[i]
+        if not tooltipFrame then
+            tooltipFrame = CreateFrame("Frame", nil, headers)
+            headers.tooltipFrames[i] = tooltipFrame
+        end
+        tooltipFrame:ClearAllPoints()
         tooltipFrame:SetPoint("LEFT", headers, "LEFT", xOffset, 0)
         tooltipFrame:SetSize(BOSS_COLUMN_WIDTH, ROW_HEIGHT)
         tooltipFrame:SetScript("OnEnter", function()
@@ -265,13 +272,14 @@ local function UpdateBossHeaders(headers)
         tooltipFrame:SetScript("OnLeave", function()
             GameTooltip:Hide()
         end)
+        tooltipFrame:Show()
 
         xOffset = xOffset + BOSS_COLUMN_WIDTH
     end
 
     -- Update frame width based on enabled bosses
-    local totalWidth = NAME_COLUMN_WIDTH + 16 + (#enabledBosses * BOSS_COLUMN_WIDTH) + 40
-    mainFrame:SetWidth(math.max(totalWidth, 300))
+    local totalWidth = NAME_COLUMN_WIDTH + 20 + (#enabledBosses * BOSS_COLUMN_WIDTH) + 20
+    mainFrame:SetWidth(math.max(totalWidth, 350))
 end
 
 -- Update a character row with data
@@ -300,6 +308,7 @@ local function UpdateCharacterRow(row, charData, enabledBosses)
             row.bossIcons[i] = icon
         end
 
+        icon:ClearAllPoints()
         icon:SetPoint("LEFT", row, "LEFT", xOffset + (BOSS_COLUMN_WIDTH / 2) - 7, 0)
 
         local killed = charData.bosses[boss.key]
@@ -384,8 +393,8 @@ function addon:InitializeUI()
     mainFrame = CreateMainFrame()
     mainFrame.bossHeaders = CreateBossHeaders(mainFrame)
 
-    -- Adjust scroll frame position to account for boss headers
-    mainFrame.scrollFrame:SetPoint("TOPLEFT", mainFrame.bossHeaders, "BOTTOMLEFT", 0, -2)
+    -- Adjust content frame position to account for boss headers
+    mainFrame.contentFrame:SetPoint("TOPLEFT", mainFrame.bossHeaders, "BOTTOMLEFT", 0, -2)
 
     -- Restore position
     if addon.db.options.framePosition then
@@ -401,6 +410,9 @@ function addon:InitializeUI()
     mainFrame:Hide()
 
     addon.mainFrame = mainFrame
+
+    -- Initialize minimap button
+    addon:InitializeMinimapButton()
 end
 
 -- Update the UI
@@ -430,6 +442,7 @@ function addon:UpdateUI()
             realmRow = CreateRealmHeader(content, realmData.name, yOffset)
             rows[rowIndex] = realmRow
         else
+            realmRow:ClearAllPoints()
             realmRow:SetPoint("TOPLEFT", content, "TOPLEFT", 0, yOffset)
             realmRow:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, yOffset)
             realmRow.text:SetText(realmData.name)
@@ -453,6 +466,7 @@ function addon:UpdateUI()
                         charRow = CreateCharacterRow(content, yOffset)
                         rows[rowIndex] = charRow
                     else
+                        charRow:ClearAllPoints()
                         charRow:SetPoint("TOPLEFT", content, "TOPLEFT", 0, yOffset)
                         charRow:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, yOffset)
                     end
@@ -468,12 +482,11 @@ function addon:UpdateUI()
 
     -- Update content height
     local totalHeight = math.abs(yOffset)
-    content:SetHeight(math.max(totalHeight, 50))
+    content:SetHeight(math.max(totalHeight, 20))
 
-    -- Update frame height
-    local frameHeight = HEADER_HEIGHT + ROW_HEIGHT + totalHeight + 12
-    frameHeight = math.max(frameHeight, FRAME_MIN_HEIGHT)
-    frameHeight = math.min(frameHeight, 500) -- Max height
+    -- Update frame height (no max limit, grows with content)
+    local frameHeight = HEADER_HEIGHT + ROW_HEIGHT + totalHeight + 10
+    frameHeight = math.max(frameHeight, 80)
     mainFrame:SetHeight(frameHeight)
 end
 
@@ -503,5 +516,326 @@ end
 function addon:HideUI()
     if mainFrame then
         mainFrame:Hide()
+    end
+end
+
+-------------------------------------------------
+-- Minimap Button
+-------------------------------------------------
+
+local minimapButton = nil
+
+function addon:InitializeMinimapButton()
+    if minimapButton then return end
+    if not addon.db.options.minimapButton then return end
+
+    -- Create minimap button
+    minimapButton = CreateFrame("Button", "WorldBossChecklistMinimapButton", Minimap)
+    minimapButton:SetSize(31, 31)
+    minimapButton:SetFrameStrata("MEDIUM")
+    minimapButton:SetFrameLevel(8)
+    minimapButton:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+
+    -- Background/border (the ring around the icon)
+    local border = minimapButton:CreateTexture(nil, "OVERLAY")
+    border:SetSize(53, 53)
+    border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
+    border:SetPoint("TOPLEFT", 0, 0)
+    minimapButton.border = border
+
+    -- Icon background (dark circle behind icon)
+    local iconBg = minimapButton:CreateTexture(nil, "BACKGROUND")
+    iconBg:SetSize(25, 25)
+    iconBg:SetTexture("Interface\\Minimap\\UI-Minimap-Background")
+    iconBg:SetPoint("CENTER", minimapButton, "CENTER", 0, 1)
+    minimapButton.iconBg = iconBg
+
+    -- Main icon - using a world boss themed icon (Sha of Anger - looks like a menacing face)
+    local icon = minimapButton:CreateTexture(nil, "ARTWORK")
+    icon:SetSize(21, 21)
+    icon:SetTexture("Interface\\Icons\\achievement_boss_shadanger")
+    icon:SetPoint("CENTER", minimapButton, "CENTER", 0, 1)
+    -- Apply circular mask using tex coords
+    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    minimapButton.icon = icon
+
+    -- Highlight texture
+    local highlight = minimapButton:CreateTexture(nil, "HIGHLIGHT")
+    highlight:SetSize(25, 25)
+    highlight:SetTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
+    highlight:SetPoint("CENTER", minimapButton, "CENTER", 0, 1)
+    minimapButton.highlight = highlight
+
+    -- Position around minimap
+    local function UpdatePosition()
+        local angle = math.rad(addon.db.options.minimapButtonAngle or 225)
+        local x = math.cos(angle) * 80
+        local y = math.sin(angle) * 80
+        minimapButton:SetPoint("CENTER", Minimap, "CENTER", x, y)
+    end
+
+    -- Dragging
+    minimapButton:SetMovable(true)
+    minimapButton:EnableMouse(true)
+    minimapButton:RegisterForDrag("LeftButton")
+
+    minimapButton:SetScript("OnDragStart", function(self)
+        self:StartMoving()
+    end)
+
+    minimapButton:SetScript("OnDragStop", function(self)
+        self:StopMovingOrSizing()
+        -- Calculate angle from minimap center
+        local mx, my = Minimap:GetCenter()
+        local px, py = self:GetCenter()
+        local angle = math.atan2(py - my, px - mx)
+        addon.db.options.minimapButtonAngle = math.deg(angle)
+        UpdatePosition()
+    end)
+
+    -- Click handlers
+    minimapButton:SetScript("OnClick", function(self, button)
+        if button == "LeftButton" then
+            addon:ToggleUI()
+        elseif button == "RightButton" then
+            addon:ToggleSettingsPanel()
+        end
+    end)
+
+    -- Tooltip
+    minimapButton:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+        GameTooltip:AddLine("World Boss Checklist", 1, 0.82, 0)
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("|cffffffffLeft-click:|r Toggle window", 0.8, 0.8, 0.8)
+        GameTooltip:AddLine("|cffffffffRight-click:|r Settings", 0.8, 0.8, 0.8)
+        GameTooltip:AddLine("|cffffffffDrag:|r Move button", 0.8, 0.8, 0.8)
+        GameTooltip:Show()
+    end)
+
+    minimapButton:SetScript("OnLeave", function(self)
+        GameTooltip:Hide()
+    end)
+
+    UpdatePosition()
+    minimapButton:Show()
+
+    addon.minimapButton = minimapButton
+end
+
+function addon:ShowMinimapButton()
+    addon.db.options.minimapButton = true
+    if not minimapButton then
+        self:InitializeMinimapButton()
+    else
+        minimapButton:Show()
+    end
+end
+
+function addon:HideMinimapButton()
+    addon.db.options.minimapButton = false
+    if minimapButton then
+        minimapButton:Hide()
+    end
+end
+
+-------------------------------------------------
+-- Settings Panel
+-------------------------------------------------
+
+local settingsPanel = nil
+
+local function CreateCheckbox(parent, label, tooltip, onClick)
+    local cb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+    cb.Text:SetText(label)
+    cb.tooltipText = tooltip
+    cb:SetScript("OnClick", function(self)
+        local checked = self:GetChecked()
+        PlaySound(checked and SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON or SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_OFF)
+        if onClick then onClick(checked) end
+    end)
+    return cb
+end
+
+local function CreateSlider(parent, label, minVal, maxVal, step, onValueChanged)
+    local slider = CreateFrame("Slider", nil, parent, "OptionsSliderTemplate")
+    slider:SetMinMaxValues(minVal, maxVal)
+    slider:SetValueStep(step)
+    slider:SetObeyStepOnDrag(true)
+    slider.Low:SetText(minVal)
+    slider.High:SetText(maxVal)
+    slider.Text:SetText(label)
+
+    slider:SetScript("OnValueChanged", function(self, value)
+        value = math.floor(value / step + 0.5) * step
+        self.valueText:SetText(string.format("%.1f", value))
+        if onValueChanged then onValueChanged(value) end
+    end)
+
+    slider.valueText = slider:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    slider.valueText:SetPoint("TOP", slider, "BOTTOM", 0, 0)
+
+    return slider
+end
+
+function addon:CreateSettingsPanel()
+    if settingsPanel then return settingsPanel end
+
+    local panel = CreateFrame("Frame", "WorldBossChecklistSettingsPanel", UIParent, "BackdropTemplate")
+    panel:SetSize(350, 400)
+    panel:SetPoint("CENTER")
+    panel:SetMovable(true)
+    panel:SetClampedToScreen(true)
+    panel:SetFrameStrata("DIALOG")
+    panel:EnableMouse(true)
+
+    panel:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 1,
+    })
+    panel:SetBackdropColor(0.1, 0.1, 0.1, 0.95)
+    panel:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+
+    -- Make draggable
+    panel:SetScript("OnMouseDown", function(self, button)
+        if button == "LeftButton" then self:StartMoving() end
+    end)
+    panel:SetScript("OnMouseUp", function(self) self:StopMovingOrSizing() end)
+
+    -- Header
+    local header = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    header:SetPoint("TOP", panel, "TOP", 0, -10)
+    header:SetText("World Boss Checklist Settings")
+    header:SetTextColor(1, 0.82, 0)
+
+    -- Close button
+    local closeBtn = CreateFrame("Button", nil, panel, "UIPanelCloseButton")
+    closeBtn:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -2, -2)
+
+    local yPos = -40
+
+    -- Show Unkilled Only
+    local cbUnkilled = CreateCheckbox(panel, "Show Unkilled Only",
+        "Only show characters that haven't killed all tracked bosses",
+        function(checked)
+            addon.db.options.showUnkilledOnly = checked
+            addon:UpdateUI()
+        end)
+    cbUnkilled:SetPoint("TOPLEFT", panel, "TOPLEFT", 20, yPos)
+    panel.cbUnkilled = cbUnkilled
+    yPos = yPos - 30
+
+    -- Show Minimap Button
+    local cbMinimap = CreateCheckbox(panel, "Show Minimap Button",
+        "Show or hide the minimap button",
+        function(checked)
+            if checked then
+                addon:ShowMinimapButton()
+            else
+                addon:HideMinimapButton()
+            end
+        end)
+    cbMinimap:SetPoint("TOPLEFT", panel, "TOPLEFT", 20, yPos)
+    panel.cbMinimap = cbMinimap
+    yPos = yPos - 30
+
+    -- Lock Frame
+    local cbLocked = CreateCheckbox(panel, "Lock Frame Position",
+        "Prevent the main window from being moved",
+        function(checked)
+            addon.db.options.locked = checked
+        end)
+    cbLocked:SetPoint("TOPLEFT", panel, "TOPLEFT", 20, yPos)
+    panel.cbLocked = cbLocked
+    yPos = yPos - 40
+
+    -- Level Requirement Slider
+    local sliderLevel = CreateSlider(panel, "Minimum Level", 0, 90, 5, function(value)
+        addon.db.options.levelRequirement = value
+        addon:UpdateUI()
+    end)
+    sliderLevel:SetPoint("TOPLEFT", panel, "TOPLEFT", 30, yPos)
+    sliderLevel:SetWidth(150)
+    panel.sliderLevel = sliderLevel
+    yPos = yPos - 50
+
+    -- UI Scale Slider
+    local sliderScale = CreateSlider(panel, "UI Scale", 0.5, 2.0, 0.1, function(value)
+        addon.db.options.frameScale = value
+        if mainFrame then
+            mainFrame:SetScale(value)
+        end
+    end)
+    sliderScale:SetPoint("TOPLEFT", panel, "TOPLEFT", 30, yPos)
+    sliderScale:SetWidth(150)
+    panel.sliderScale = sliderScale
+    yPos = yPos - 50
+
+    -- Boss Tracking Section
+    local bossHeader = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    bossHeader:SetPoint("TOPLEFT", panel, "TOPLEFT", 20, yPos)
+    bossHeader:SetText("Track Bosses:")
+    bossHeader:SetTextColor(1, 0.82, 0)
+    yPos = yPos - 25
+
+    panel.bossCheckboxes = {}
+    for i, boss in ipairs(addon.WORLD_BOSSES) do
+        local cb = CreateCheckbox(panel, boss.name,
+            boss.zone .. (boss.note and (" - " .. boss.note) or ""),
+            function(checked)
+                addon.db.options.trackBosses[boss.key] = checked
+                addon:UpdateUI()
+            end)
+        cb:SetPoint("TOPLEFT", panel, "TOPLEFT", 20, yPos)
+        panel.bossCheckboxes[boss.key] = cb
+        yPos = yPos - 25
+    end
+
+    panel:Hide()
+    settingsPanel = panel
+    return panel
+end
+
+function addon:UpdateSettingsPanel()
+    if not settingsPanel then return end
+
+    local opts = addon.db.options
+
+    settingsPanel.cbUnkilled:SetChecked(opts.showUnkilledOnly)
+    settingsPanel.cbMinimap:SetChecked(opts.minimapButton)
+    settingsPanel.cbLocked:SetChecked(opts.locked)
+    settingsPanel.sliderLevel:SetValue(opts.levelRequirement or 0)
+    settingsPanel.sliderScale:SetValue(opts.frameScale or 1.0)
+
+    for key, cb in pairs(settingsPanel.bossCheckboxes) do
+        cb:SetChecked(opts.trackBosses[key])
+    end
+end
+
+function addon:ToggleSettingsPanel()
+    if not settingsPanel then
+        self:CreateSettingsPanel()
+    end
+
+    if settingsPanel:IsShown() then
+        settingsPanel:Hide()
+    else
+        self:UpdateSettingsPanel()
+        settingsPanel:Show()
+    end
+end
+
+function addon:ShowSettingsPanel()
+    if not settingsPanel then
+        self:CreateSettingsPanel()
+    end
+    self:UpdateSettingsPanel()
+    settingsPanel:Show()
+end
+
+function addon:HideSettingsPanel()
+    if settingsPanel then
+        settingsPanel:Hide()
     end
 end
