@@ -413,6 +413,9 @@ function addon:InitializeUI()
 
     -- Initialize minimap button
     addon:InitializeMinimapButton()
+
+    -- Initialize Titan Panel support
+    addon:InitializeTitanPanel()
 end
 
 -- Update the UI
@@ -550,13 +553,11 @@ function addon:InitializeMinimapButton()
     iconBg:SetPoint("CENTER", minimapButton, "CENTER", 0, 1)
     minimapButton.iconBg = iconBg
 
-    -- Main icon - using a world boss themed icon (Sha of Anger - looks like a menacing face)
+    -- Main icon - using raid target skull which exists in all WoW versions
     local icon = minimapButton:CreateTexture(nil, "ARTWORK")
-    icon:SetSize(21, 21)
-    icon:SetTexture("Interface\\Icons\\achievement_boss_shadanger")
+    icon:SetSize(20, 20)
+    icon:SetTexture("Interface\\TARGETINGFRAME\\UI-RaidTargetingIcon_8")  -- Skull marker
     icon:SetPoint("CENTER", minimapButton, "CENTER", 0, 1)
-    -- Apply circular mask using tex coords
-    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     minimapButton.icon = icon
 
     -- Highlight texture
@@ -640,10 +641,138 @@ function addon:HideMinimapButton()
 end
 
 -------------------------------------------------
--- Settings Panel
+-- Titan Panel Support
+-------------------------------------------------
+
+function addon:InitializeTitanPanel()
+    -- Check if Titan Panel is loaded
+    if not TitanPanelButton_OnLoad then return end
+
+    local TITAN_ID = "WorldBossChecklist"
+
+    -- Create the Titan Panel button
+    local titanButton = CreateFrame("Button", "TitanPanelWorldBossChecklistButton", UIParent, "TitanPanelComboTemplate")
+    titanButton:SetFrameStrata("FULLSCREEN")
+
+    -- Define the registry
+    titanButton.registry = {
+        id = TITAN_ID,
+        category = "Information",
+        version = "1.1.0",
+        menuText = "World Boss Checklist",
+        buttonTextFunction = "TitanPanelWorldBossChecklistButton_GetButtonText",
+        tooltipTitle = "World Boss Checklist",
+        tooltipTextFunction = "TitanPanelWorldBossChecklistButton_GetTooltipText",
+        icon = "Interface\\TARGETINGFRAME\\UI-RaidTargetingIcon_8",
+        iconWidth = 16,
+        savedVariables = {
+            ShowIcon = 1,
+            ShowLabelText = 1,
+        }
+    }
+
+    -- Register with Titan Panel
+    TitanPanelButton_OnLoad(titanButton)
+
+    addon.titanButton = titanButton
+end
+
+-- Titan Panel button text function
+function TitanPanelWorldBossChecklistButton_GetButtonText(id)
+    local unkilled = 0
+    local total = 0
+    local enabledBosses = addon:GetEnabledBosses()
+
+    -- Get current character's unkilled count
+    local info = addon:GetCurrentCharacterInfo()
+    if addon.db.realms[info.realm] and addon.db.realms[info.realm][info.name] then
+        local charData = addon.db.realms[info.realm][info.name]
+        for _, boss in ipairs(enabledBosses) do
+            total = total + 1
+            if not charData.bosses[boss.key] then
+                unkilled = unkilled + 1
+            end
+        end
+    else
+        total = #enabledBosses
+        unkilled = total
+    end
+
+    return "WBC", unkilled .. "/" .. total
+end
+
+-- Titan Panel tooltip function
+function TitanPanelWorldBossChecklistButton_GetTooltipText()
+    local lines = {}
+    local enabledBosses = addon:GetEnabledBosses()
+    local info = addon:GetCurrentCharacterInfo()
+
+    table.insert(lines, "|cff00ff00" .. info.name .. "|r")
+    table.insert(lines, " ")
+
+    if addon.db.realms[info.realm] and addon.db.realms[info.realm][info.name] then
+        local charData = addon.db.realms[info.realm][info.name]
+        for _, boss in ipairs(enabledBosses) do
+            local status = charData.bosses[boss.key] and "|cff00ff00Killed|r" or "|cffff0000Not Killed|r"
+            table.insert(lines, boss.name .. ": " .. status)
+        end
+    else
+        for _, boss in ipairs(enabledBosses) do
+            table.insert(lines, boss.name .. ": |cffff0000Not Killed|r")
+        end
+    end
+
+    table.insert(lines, " ")
+    table.insert(lines, "|cffffffffLeft-click:|r Toggle window")
+    table.insert(lines, "|cffffffffRight-click:|r Settings menu")
+
+    return table.concat(lines, "\n")
+end
+
+-- Titan Panel right-click menu
+function TitanPanelRightClickMenu_PrepareWorldBossChecklistMenu()
+    local info = {}
+
+    -- Title
+    info.text = "World Boss Checklist"
+    info.isTitle = true
+    info.notCheckable = true
+    UIDropDownMenu_AddButton(info)
+
+    -- Open window
+    info = {}
+    info.text = "Open Window"
+    info.func = function() addon:ShowUI() end
+    info.notCheckable = true
+    UIDropDownMenu_AddButton(info)
+
+    -- Settings
+    info = {}
+    info.text = "Settings"
+    info.func = function() addon:ShowSettingsPanel() end
+    info.notCheckable = true
+    UIDropDownMenu_AddButton(info)
+
+    -- Separator
+    TitanPanelRightClickMenu_AddSpacer()
+
+    -- Standard Titan options
+    TitanPanelRightClickMenu_AddToggleIcon("WorldBossChecklist")
+    TitanPanelRightClickMenu_AddToggleLabelText("WorldBossChecklist")
+
+    -- Hide option
+    TitanPanelRightClickMenu_AddSpacer()
+    TitanPanelRightClickMenu_AddCommand("Hide", "WorldBossChecklist", TITAN_PANEL_MENU_FUNC_HIDE)
+end
+
+-------------------------------------------------
+-- Settings Panel (Tabbed)
 -------------------------------------------------
 
 local settingsPanel = nil
+local TAB_GENERAL = 1
+local TAB_BOSSES = 2
+local TAB_CHARACTERS = 3
 
 local function CreateCheckbox(parent, label, tooltip, onClick)
     local cb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
@@ -662,6 +791,7 @@ local function CreateSlider(parent, label, minVal, maxVal, step, onValueChanged)
     slider:SetMinMaxValues(minVal, maxVal)
     slider:SetValueStep(step)
     slider:SetObeyStepOnDrag(true)
+    slider:SetWidth(200)
     slider.Low:SetText(minVal)
     slider.High:SetText(maxVal)
     slider.Text:SetText(label)
@@ -673,16 +803,72 @@ local function CreateSlider(parent, label, minVal, maxVal, step, onValueChanged)
     end)
 
     slider.valueText = slider:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    slider.valueText:SetPoint("TOP", slider, "BOTTOM", 0, 0)
+    slider.valueText:SetPoint("TOP", slider, "BOTTOM", 0, -2)
 
     return slider
+end
+
+local function CreateTab(parent, id, text, onClick)
+    local tab = CreateFrame("Button", nil, parent)
+    tab:SetSize(100, 28)
+    tab.id = id
+
+    -- Background
+    tab.bg = tab:CreateTexture(nil, "BACKGROUND")
+    tab.bg:SetAllPoints()
+    tab.bg:SetColorTexture(0.2, 0.2, 0.2, 0.8)
+
+    -- Text
+    tab.text = tab:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    tab.text:SetPoint("CENTER")
+    tab.text:SetText(text)
+
+    -- Selected indicator
+    tab.selected = tab:CreateTexture(nil, "BORDER")
+    tab.selected:SetPoint("BOTTOMLEFT", 0, 0)
+    tab.selected:SetPoint("BOTTOMRIGHT", 0, 0)
+    tab.selected:SetHeight(2)
+    tab.selected:SetColorTexture(1, 0.82, 0, 1)
+    tab.selected:Hide()
+
+    tab:SetScript("OnClick", function(self)
+        PlaySound(SOUNDKIT.IG_MAINMENU_OPTION)
+        if onClick then onClick(self.id) end
+    end)
+
+    tab:SetScript("OnEnter", function(self)
+        if not self.isSelected then
+            self.bg:SetColorTexture(0.3, 0.3, 0.3, 0.8)
+        end
+    end)
+
+    tab:SetScript("OnLeave", function(self)
+        if not self.isSelected then
+            self.bg:SetColorTexture(0.2, 0.2, 0.2, 0.8)
+        end
+    end)
+
+    return tab
+end
+
+local function SetTabSelected(tab, selected)
+    tab.isSelected = selected
+    if selected then
+        tab.bg:SetColorTexture(0.15, 0.15, 0.15, 1)
+        tab.selected:Show()
+        tab.text:SetTextColor(1, 0.82, 0)
+    else
+        tab.bg:SetColorTexture(0.2, 0.2, 0.2, 0.8)
+        tab.selected:Hide()
+        tab.text:SetTextColor(0.8, 0.8, 0.8)
+    end
 end
 
 function addon:CreateSettingsPanel()
     if settingsPanel then return settingsPanel end
 
     local panel = CreateFrame("Frame", "WorldBossChecklistSettingsPanel", UIParent, "BackdropTemplate")
-    panel:SetSize(350, 400)
+    panel:SetSize(400, 450)
     panel:SetPoint("CENTER")
     panel:SetMovable(true)
     panel:SetClampedToScreen(true)
@@ -713,21 +899,75 @@ function addon:CreateSettingsPanel()
     local closeBtn = CreateFrame("Button", nil, panel, "UIPanelCloseButton")
     closeBtn:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -2, -2)
 
-    local yPos = -40
+    -- Tab buttons
+    panel.tabs = {}
+    local tabContainer = CreateFrame("Frame", nil, panel)
+    tabContainer:SetPoint("TOPLEFT", panel, "TOPLEFT", 10, -35)
+    tabContainer:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -10, -35)
+    tabContainer:SetHeight(28)
+
+    local function SwitchTab(tabId)
+        panel.currentTab = tabId
+        for _, t in pairs(panel.tabs) do
+            SetTabSelected(t, t.id == tabId)
+        end
+        -- Show/hide content
+        panel.generalContent:SetShown(tabId == TAB_GENERAL)
+        panel.bossesContent:SetShown(tabId == TAB_BOSSES)
+        panel.charactersContent:SetShown(tabId == TAB_CHARACTERS)
+
+        if tabId == TAB_CHARACTERS then
+            addon:UpdateCharacterList()
+        end
+    end
+
+    local tab1 = CreateTab(tabContainer, TAB_GENERAL, "General", SwitchTab)
+    tab1:SetPoint("LEFT", tabContainer, "LEFT", 0, 0)
+    panel.tabs[TAB_GENERAL] = tab1
+
+    local tab2 = CreateTab(tabContainer, TAB_BOSSES, "Bosses", SwitchTab)
+    tab2:SetPoint("LEFT", tab1, "RIGHT", 5, 0)
+    panel.tabs[TAB_BOSSES] = tab2
+
+    local tab3 = CreateTab(tabContainer, TAB_CHARACTERS, "Characters", SwitchTab)
+    tab3:SetPoint("LEFT", tab2, "RIGHT", 5, 0)
+    panel.tabs[TAB_CHARACTERS] = tab3
+
+    -- Content area
+    local contentArea = CreateFrame("Frame", nil, panel, "BackdropTemplate")
+    contentArea:SetPoint("TOPLEFT", tabContainer, "BOTTOMLEFT", 0, -5)
+    contentArea:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -10, 10)
+    contentArea:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 1,
+    })
+    contentArea:SetBackdropColor(0.08, 0.08, 0.08, 0.9)
+    contentArea:SetBackdropBorderColor(0.2, 0.2, 0.2, 1)
+    panel.contentArea = contentArea
+
+    -------------------------------------------------
+    -- General Tab Content
+    -------------------------------------------------
+    local generalContent = CreateFrame("Frame", nil, contentArea)
+    generalContent:SetAllPoints()
+    panel.generalContent = generalContent
+
+    local yPos = -20
 
     -- Show Unkilled Only
-    local cbUnkilled = CreateCheckbox(panel, "Show Unkilled Only",
+    local cbUnkilled = CreateCheckbox(generalContent, "Show Unkilled Only",
         "Only show characters that haven't killed all tracked bosses",
         function(checked)
             addon.db.options.showUnkilledOnly = checked
             addon:UpdateUI()
         end)
-    cbUnkilled:SetPoint("TOPLEFT", panel, "TOPLEFT", 20, yPos)
+    cbUnkilled:SetPoint("TOPLEFT", generalContent, "TOPLEFT", 20, yPos)
     panel.cbUnkilled = cbUnkilled
     yPos = yPos - 30
 
     -- Show Minimap Button
-    local cbMinimap = CreateCheckbox(panel, "Show Minimap Button",
+    local cbMinimap = CreateCheckbox(generalContent, "Show Minimap Button",
         "Show or hide the minimap button",
         function(checked)
             if checked then
@@ -736,66 +976,268 @@ function addon:CreateSettingsPanel()
                 addon:HideMinimapButton()
             end
         end)
-    cbMinimap:SetPoint("TOPLEFT", panel, "TOPLEFT", 20, yPos)
+    cbMinimap:SetPoint("TOPLEFT", generalContent, "TOPLEFT", 20, yPos)
     panel.cbMinimap = cbMinimap
     yPos = yPos - 30
 
     -- Lock Frame
-    local cbLocked = CreateCheckbox(panel, "Lock Frame Position",
+    local cbLocked = CreateCheckbox(generalContent, "Lock Frame Position",
         "Prevent the main window from being moved",
         function(checked)
             addon.db.options.locked = checked
         end)
-    cbLocked:SetPoint("TOPLEFT", panel, "TOPLEFT", 20, yPos)
+    cbLocked:SetPoint("TOPLEFT", generalContent, "TOPLEFT", 20, yPos)
     panel.cbLocked = cbLocked
-    yPos = yPos - 40
+    yPos = yPos - 50
 
     -- Level Requirement Slider
-    local sliderLevel = CreateSlider(panel, "Minimum Level", 0, 90, 5, function(value)
+    local sliderLevel = CreateSlider(generalContent, "Minimum Level Filter", 0, 90, 5, function(value)
         addon.db.options.levelRequirement = value
         addon:UpdateUI()
     end)
-    sliderLevel:SetPoint("TOPLEFT", panel, "TOPLEFT", 30, yPos)
-    sliderLevel:SetWidth(150)
+    sliderLevel:SetPoint("TOPLEFT", generalContent, "TOPLEFT", 30, yPos)
     panel.sliderLevel = sliderLevel
-    yPos = yPos - 50
+    yPos = yPos - 60
 
     -- UI Scale Slider
-    local sliderScale = CreateSlider(panel, "UI Scale", 0.5, 2.0, 0.1, function(value)
+    local sliderScale = CreateSlider(generalContent, "UI Scale", 0.5, 2.0, 0.1, function(value)
         addon.db.options.frameScale = value
         if mainFrame then
             mainFrame:SetScale(value)
         end
     end)
-    sliderScale:SetPoint("TOPLEFT", panel, "TOPLEFT", 30, yPos)
-    sliderScale:SetWidth(150)
+    sliderScale:SetPoint("TOPLEFT", generalContent, "TOPLEFT", 30, yPos)
     panel.sliderScale = sliderScale
-    yPos = yPos - 50
 
-    -- Boss Tracking Section
-    local bossHeader = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    bossHeader:SetPoint("TOPLEFT", panel, "TOPLEFT", 20, yPos)
-    bossHeader:SetText("Track Bosses:")
-    bossHeader:SetTextColor(1, 0.82, 0)
-    yPos = yPos - 25
+    -------------------------------------------------
+    -- Bosses Tab Content
+    -------------------------------------------------
+    local bossesContent = CreateFrame("Frame", nil, contentArea)
+    bossesContent:SetAllPoints()
+    bossesContent:Hide()
+    panel.bossesContent = bossesContent
 
+    local bossHeader = bossesContent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    bossHeader:SetPoint("TOPLEFT", bossesContent, "TOPLEFT", 20, -15)
+    bossHeader:SetText("Select which bosses to track:")
+    bossHeader:SetTextColor(0.9, 0.9, 0.9)
+
+    yPos = -45
     panel.bossCheckboxes = {}
     for i, boss in ipairs(addon.WORLD_BOSSES) do
-        local cb = CreateCheckbox(panel, boss.name,
+        local cb = CreateCheckbox(bossesContent, boss.name,
             boss.zone .. (boss.note and (" - " .. boss.note) or ""),
             function(checked)
                 addon.db.options.trackBosses[boss.key] = checked
                 addon:UpdateUI()
             end)
-        cb:SetPoint("TOPLEFT", panel, "TOPLEFT", 20, yPos)
+        cb:SetPoint("TOPLEFT", bossesContent, "TOPLEFT", 20, yPos)
         panel.bossCheckboxes[boss.key] = cb
-        yPos = yPos - 25
+
+        -- Add zone info
+        local zoneText = bossesContent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        zoneText:SetPoint("LEFT", cb.Text, "RIGHT", 10, 0)
+        zoneText:SetText("|cff888888(" .. boss.zone .. ")|r")
+        cb.zoneText = zoneText
+
+        yPos = yPos - 28
     end
+
+    -------------------------------------------------
+    -- Characters Tab Content
+    -------------------------------------------------
+    local charactersContent = CreateFrame("Frame", nil, contentArea)
+    charactersContent:SetAllPoints()
+    charactersContent:Hide()
+    panel.charactersContent = charactersContent
+
+    local charHeader = charactersContent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    charHeader:SetPoint("TOPLEFT", charactersContent, "TOPLEFT", 20, -15)
+    charHeader:SetText("Manage your characters:")
+    charHeader:SetTextColor(0.9, 0.9, 0.9)
+
+    -- Scroll frame for character list
+    local scrollFrame = CreateFrame("ScrollFrame", nil, charactersContent, "UIPanelScrollFrameTemplate")
+    scrollFrame:SetPoint("TOPLEFT", charactersContent, "TOPLEFT", 10, -40)
+    scrollFrame:SetPoint("BOTTOMRIGHT", charactersContent, "BOTTOMRIGHT", -30, 50)
+
+    local scrollChild = CreateFrame("Frame", nil, scrollFrame)
+    scrollChild:SetSize(340, 1)
+    scrollFrame:SetScrollChild(scrollChild)
+    panel.charScrollChild = scrollChild
+    panel.charRows = {}
+
+    -- Banned characters section
+    local bannedLabel = charactersContent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    bannedLabel:SetPoint("BOTTOMLEFT", charactersContent, "BOTTOMLEFT", 15, 25)
+    bannedLabel:SetTextColor(0.7, 0.7, 0.7)
+    panel.bannedLabel = bannedLabel
+
+    local unbanAllBtn = CreateFrame("Button", nil, charactersContent, "UIPanelButtonTemplate")
+    unbanAllBtn:SetSize(100, 22)
+    unbanAllBtn:SetPoint("BOTTOMRIGHT", charactersContent, "BOTTOMRIGHT", -15, 15)
+    unbanAllBtn:SetText("Unban All")
+    unbanAllBtn:SetScript("OnClick", function()
+        StaticPopup_Show("WBC_CONFIRM_UNBAN_ALL")
+    end)
+    panel.unbanAllBtn = unbanAllBtn
+
+    -- Start with general tab
+    panel.currentTab = TAB_GENERAL
+    SetTabSelected(tab1, true)
 
     panel:Hide()
     settingsPanel = panel
     return panel
 end
+
+-- Static popup for unban all
+StaticPopupDialogs["WBC_CONFIRM_UNBAN_ALL"] = {
+    text = "Unban all characters?\n\nThis will allow all previously banned characters to be tracked again.",
+    button1 = "Yes",
+    button2 = "No",
+    OnAccept = function()
+        addon.db.banned = {}
+        addon:UpdateCharacterList()
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+-- Create a character row for the settings panel
+local function CreateCharacterSettingsRow(parent, index)
+    local row = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+    row:SetHeight(24)
+    row:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, -(index - 1) * 26)
+    row:SetPoint("RIGHT", parent, "RIGHT", 0, 0)
+
+    row:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+    })
+    row:SetBackdropColor(0.15, 0.15, 0.15, 0.5)
+
+    -- Name
+    row.nameText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    row.nameText:SetPoint("LEFT", row, "LEFT", 8, 0)
+    row.nameText:SetWidth(180)
+    row.nameText:SetJustifyH("LEFT")
+
+    -- Realm
+    row.realmText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    row.realmText:SetPoint("LEFT", row.nameText, "RIGHT", 5, 0)
+    row.realmText:SetWidth(80)
+    row.realmText:SetJustifyH("LEFT")
+    row.realmText:SetTextColor(0.6, 0.6, 0.6)
+
+    -- Delete button
+    row.deleteBtn = CreateFrame("Button", nil, row)
+    row.deleteBtn:SetSize(16, 16)
+    row.deleteBtn:SetPoint("RIGHT", row, "RIGHT", -30, 0)
+    row.deleteBtn:SetNormalTexture("Interface\\Buttons\\UI-StopButton")
+    row.deleteBtn:SetHighlightTexture("Interface\\Buttons\\UI-StopButton")
+    row.deleteBtn:GetHighlightTexture():SetVertexColor(1, 0.5, 0.5)
+    row.deleteBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:AddLine("Delete", 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    row.deleteBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+    -- Ban button
+    row.banBtn = CreateFrame("Button", nil, row)
+    row.banBtn:SetSize(16, 16)
+    row.banBtn:SetPoint("RIGHT", row, "RIGHT", -8, 0)
+    row.banBtn:SetNormalTexture("Interface\\RAIDFRAME\\ReadyCheck-NotReady")
+    row.banBtn:SetHighlightTexture("Interface\\RAIDFRAME\\ReadyCheck-NotReady")
+    row.banBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:AddLine("Ban", 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    row.banBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+    return row
+end
+
+function addon:UpdateCharacterList()
+    if not settingsPanel or not settingsPanel.charScrollChild then return end
+
+    local scrollChild = settingsPanel.charScrollChild
+    local allCharacters = self:GetAllCharacters()
+
+    -- Hide all existing rows
+    for _, row in ipairs(settingsPanel.charRows) do
+        row:Hide()
+    end
+
+    local rowIndex = 0
+    for _, realmData in ipairs(allCharacters) do
+        for _, charData in ipairs(realmData.characters) do
+            rowIndex = rowIndex + 1
+
+            local row = settingsPanel.charRows[rowIndex]
+            if not row then
+                row = CreateCharacterSettingsRow(scrollChild, rowIndex)
+                settingsPanel.charRows[rowIndex] = row
+            end
+
+            local classColor = GetClassColor(charData.class)
+            row.nameText:SetText(string.format("|cff%02x%02x%02x(%d) %s|r",
+                classColor.r * 255,
+                classColor.g * 255,
+                classColor.b * 255,
+                charData.level or 0,
+                charData.name))
+            row.realmText:SetText(charData.realm)
+
+            -- Store data for callbacks
+            row.charData = charData
+
+            row.deleteBtn:SetScript("OnClick", function()
+                addon:DeleteCharacter(charData.fullName)
+                addon:UpdateCharacterList()
+                addon:UpdateUI()
+            end)
+
+            row.banBtn:SetScript("OnClick", function()
+                StaticPopup_Show("WBC_CONFIRM_BAN_SETTINGS", charData.fullName)
+            end)
+
+            row:ClearAllPoints()
+            row:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, -(rowIndex - 1) * 26)
+            row:SetPoint("RIGHT", scrollChild, "RIGHT", 0, 0)
+            row:Show()
+        end
+    end
+
+    scrollChild:SetHeight(math.max(rowIndex * 26, 10))
+
+    -- Update banned count
+    local bannedCount = 0
+    for _ in pairs(self.db.banned) do
+        bannedCount = bannedCount + 1
+    end
+    settingsPanel.bannedLabel:SetText("Banned characters: " .. bannedCount)
+    settingsPanel.unbanAllBtn:SetEnabled(bannedCount > 0)
+end
+
+-- Static popup for ban from settings
+StaticPopupDialogs["WBC_CONFIRM_BAN_SETTINGS"] = {
+    text = "Ban %s?\n\nThis character will be removed and won't be added again when you log in.",
+    button1 = "Yes",
+    button2 = "No",
+    OnAccept = function(self, data)
+        addon:BanCharacter(data)
+        addon:UpdateCharacterList()
+        addon:UpdateUI()
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
 
 function addon:UpdateSettingsPanel()
     if not settingsPanel then return end

@@ -5,6 +5,23 @@ All notable changes to the World Boss Checklist addon will be documented in this
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-01-14
+
+### Added
+- **Tabbed settings panel** - Settings are now organized into three tabs: General, Bosses, and Characters
+- **Character management tab** - View all tracked characters, delete or ban them directly from settings
+- **Titan Panel support** - Full integration with Titan Panel addon (shows unkilled boss count, tooltip with details, right-click menu)
+- **Unban All button** - Quickly unban all previously banned characters from the Characters tab
+
+### Changed
+- **Minimap icon** - Changed to skull raid marker icon which displays correctly in all WoW versions
+- **Settings panel size** - Increased to 400x450 pixels for better readability
+- **Slider width** - Increased to 200 pixels for easier adjustment
+- **Boss checkboxes** - Now show zone information next to each boss name
+
+### Fixed
+- **Minimap icon appearing as black circle** - Replaced achievement icon with guaranteed-to-exist raid target icon
+
 ## [1.0.1] - 2026-01-14
 
 ### Added

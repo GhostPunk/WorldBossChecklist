@@ -22,7 +22,8 @@ A World of Warcraft addon for **Classic Mists of Pandaria (5.5.3)** that tracks 
 - **Class-colored names** - Easy identification of character classes
 - **Movable & scalable UI** - Position and size the window to your preference
 - **Minimap button** - Quick access to toggle the window (left-click) or settings (right-click)
-- **Settings panel** - GUI for all options, no need to memorize slash commands
+- **Settings panel** - Tabbed GUI for all options (General, Bosses, Characters)
+- **Titan Panel support** - Full integration with Titan Panel addon
 
 ## Installation
 
@@ -129,6 +130,7 @@ A: Right-click the character and select "Delete" or "Ban" (if you don't want it 
 
 - **Game Version**: Classic Mists of Pandaria 5.5.3 (Interface 65302)
 - **Dependencies**: None (standalone addon)
+- **Optional**: [Titan Panel](https://www.curseforge.com/wow/addons/titan-panel-classic) - If installed, the addon will automatically register as a Titan Panel plugin
 
 ## Credits
 
