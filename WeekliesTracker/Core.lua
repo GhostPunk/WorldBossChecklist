@@ -4,13 +4,44 @@ local addonName, addon = ...
 local frame = CreateFrame("Frame")
 addon.frame = frame
 
+-- Migrate from old WorldBossChecklistDB to WeekliesTrackerDB
+local function MigrateDB()
+    if WorldBossChecklistDB and not WeekliesTrackerDB then
+        -- Copy old data to new DB
+        WeekliesTrackerDB = {}
+        for key, value in pairs(WorldBossChecklistDB) do
+            if type(value) == "table" then
+                WeekliesTrackerDB[key] = {}
+                for k, v in pairs(value) do
+                    if type(v) == "table" then
+                        WeekliesTrackerDB[key][k] = {}
+                        for k2, v2 in pairs(v) do
+                            WeekliesTrackerDB[key][k][k2] = v2
+                        end
+                    else
+                        WeekliesTrackerDB[key][k] = v
+                    end
+                end
+            else
+                WeekliesTrackerDB[key] = value
+            end
+        end
+        -- Mark as migrated
+        WeekliesTrackerDB.migratedFrom = "WorldBossChecklistDB"
+        WeekliesTrackerDB.migratedAt = GetServerTime()
+    end
+end
+
 -- Initialize database
 local function InitializeDB()
-    if not WorldBossChecklistDB then
-        WorldBossChecklistDB = {}
+    -- Migrate from old DB if needed
+    MigrateDB()
+
+    if not WeekliesTrackerDB then
+        WeekliesTrackerDB = {}
     end
 
-    local db = WorldBossChecklistDB
+    local db = WeekliesTrackerDB
 
     -- Initialize realms table
     if not db.realms then
@@ -60,6 +91,45 @@ function addon:IsQuestDone(questID)
     return false
 end
 
+-- Get valor point information from the currency API
+function addon:GetValorInfo()
+    local currencyInfo = nil
+
+    -- Try modern C_CurrencyInfo API first
+    if C_CurrencyInfo and C_CurrencyInfo.GetCurrencyInfo then
+        currencyInfo = C_CurrencyInfo.GetCurrencyInfo(addon.VALOR_CURRENCY_ID)
+        if currencyInfo then
+            return {
+                current = currencyInfo.quantity or 0,
+                earnedThisWeek = currencyInfo.quantityEarnedThisWeek or 0,
+                weeklyMax = currencyInfo.maxWeeklyQuantity or addon.VALOR_WEEKLY_CAP,
+                totalMax = currencyInfo.maxQuantity or 3000,
+            }
+        end
+    end
+
+    -- Fallback to older GetCurrencyInfo API
+    if GetCurrencyInfo then
+        local name, current, texture, earnedThisWeek, weeklyMax, totalMax, isDiscovered = GetCurrencyInfo(addon.VALOR_CURRENCY_ID)
+        if name then
+            return {
+                current = current or 0,
+                earnedThisWeek = earnedThisWeek or 0,
+                weeklyMax = weeklyMax or addon.VALOR_WEEKLY_CAP,
+                totalMax = totalMax or 3000,
+            }
+        end
+    end
+
+    -- Return defaults if API fails
+    return {
+        current = 0,
+        earnedThisWeek = 0,
+        weeklyMax = addon.VALOR_WEEKLY_CAP,
+        totalMax = 3000,
+    }
+end
+
 -- Get the next weekly reset time
 function addon:GetWeeklyResetTime()
     if C_DateAndTime and C_DateAndTime.GetSecondsUntilWeeklyReset then
@@ -86,6 +156,7 @@ function addon:CheckWeeklyReset()
     -- Check if we've passed the reset time
     if now >= self.db.nextResetTime then
         self:ResetAllBossKills()
+        self:ResetAllValor()
         self.db.nextResetTime = nextReset or (now + 7 * 24 * 60 * 60)
     end
 end
@@ -98,6 +169,17 @@ function addon:ResetAllBossKills()
                 for bossKey in pairs(charData.bosses) do
                     charData.bosses[bossKey] = false
                 end
+            end
+        end
+    end
+end
+
+-- Reset all valor earnedThisWeek for all characters
+function addon:ResetAllValor()
+    for realmName, characters in pairs(self.db.realms) do
+        for charName, charData in pairs(characters) do
+            if charData.valor then
+                charData.valor.earnedThisWeek = 0
             end
         end
     end
@@ -155,6 +237,33 @@ function addon:DeleteCharacter(fullName)
     end
 end
 
+-- Update current character's valor data
+function addon:UpdateCurrentCharacterValor()
+    local info = self:GetCurrentCharacterInfo()
+
+    -- Check if banned
+    if self:IsCharacterBanned(info.fullName) then
+        return
+    end
+
+    -- Ensure realm and character exist
+    if not self.db.realms[info.realm] then return end
+    if not self.db.realms[info.realm][info.name] then return end
+
+    local charData = self.db.realms[info.realm][info.name]
+    local valorInfo = self:GetValorInfo()
+
+    -- Initialize valor table if needed
+    if not charData.valor then
+        charData.valor = {}
+    end
+
+    charData.valor.current = valorInfo.current
+    charData.valor.earnedThisWeek = valorInfo.earnedThisWeek
+    charData.valor.weeklyMax = valorInfo.weeklyMax
+    charData.valor.lastUpdated = GetServerTime()
+end
+
 -- Update current character's data
 function addon:UpdateCurrentCharacter()
     local info = self:GetCurrentCharacterInfo()
@@ -176,6 +285,7 @@ function addon:UpdateCurrentCharacter()
             class = info.class,
             level = info.level,
             bosses = {},
+            valor = {},
         }
     end
 
@@ -190,6 +300,9 @@ function addon:UpdateCurrentCharacter()
     for _, boss in ipairs(addon.WORLD_BOSSES) do
         charData.bosses[boss.key] = self:IsQuestDone(boss.questID)
     end
+
+    -- Update valor info
+    self:UpdateCurrentCharacterValor()
 end
 
 -- Get all characters sorted by realm
@@ -211,6 +324,7 @@ function addon:GetAllCharacters()
                 level = charData.level,
                 lastSeen = charData.lastSeen,
                 bosses = charData.bosses or {},
+                valor = charData.valor or {},
             })
         end
 
@@ -232,7 +346,7 @@ function addon:GetAllCharacters()
     return result
 end
 
--- Check if character should be shown based on filters
+-- Check if character should be shown based on filters (for bosses tab)
 function addon:ShouldShowCharacter(charData)
     local opts = self.db.options
 
@@ -255,6 +369,30 @@ function addon:ShouldShowCharacter(charData)
             end
         end
         if allKilled then
+            return false
+        end
+    end
+
+    return true
+end
+
+-- Check if character should be shown in valor tab based on filters
+function addon:ShouldShowCharacterValor(charData)
+    local opts = self.db.options
+
+    -- Check level requirement (valor typically requires level 90)
+    if opts.levelRequirement and opts.levelRequirement > 0 then
+        if (charData.level or 0) < opts.levelRequirement then
+            return false
+        end
+    end
+
+    -- Check "show not capped only" option
+    if opts.showNotCappedOnly then
+        local valor = charData.valor or {}
+        local earned = valor.earnedThisWeek or 0
+        local max = valor.weeklyMax or addon.VALOR_WEEKLY_CAP
+        if earned >= max then
             return false
         end
     end
@@ -308,6 +446,13 @@ frame:SetScript("OnEvent", function(self, event, ...)
         if addon.UpdateUI then
             addon:UpdateUI()
         end
+
+    elseif event == "CURRENCY_DISPLAY_UPDATE" then
+        -- Valor points may have changed
+        addon:UpdateCurrentCharacterValor()
+        if addon.UpdateUI then
+            addon:UpdateUI()
+        end
     end
 end)
 
@@ -316,3 +461,4 @@ frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 frame:RegisterEvent("QUEST_LOG_UPDATE")
 frame:RegisterEvent("QUEST_TURNED_IN")
+frame:RegisterEvent("CURRENCY_DISPLAY_UPDATE")

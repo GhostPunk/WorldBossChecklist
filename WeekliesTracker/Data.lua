@@ -1,5 +1,9 @@
 local addonName, addon = ...
 
+-- Valor Points Currency
+addon.VALOR_CURRENCY_ID = 396
+addon.VALOR_WEEKLY_CAP = 1600  -- Fallback if API fails
+
 -- World Boss definitions for Mists of Pandaria
 addon.WORLD_BOSSES = {
     {
@@ -76,6 +80,10 @@ addon.DEFAULT_OPTIONS = {
     },
     collapsedRealms = {},
     framePosition = nil,
+    -- Valor tracking options
+    trackValor = true,
+    showNotCappedOnly = false,
+    mainWindowTab = 1,  -- 1 = Bosses, 2 = Valor
 }
 
 -- Atlas icons for kill status
@@ -88,4 +96,7 @@ addon.COLORS = {
     REALM = {0.5, 0.5, 0.5},         -- Gray
     KILLED = {0, 1, 0},              -- Green
     NOT_KILLED = {1, 0, 0},          -- Red
+    VALOR_CAPPED = {0, 1, 0},        -- Green (capped)
+    VALOR_HIGH = {1, 1, 0},          -- Yellow (>=50%)
+    VALOR_LOW = {1, 0.5, 0},         -- Orange (<50%)
 }

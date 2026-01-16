@@ -2,12 +2,20 @@ local addonName, addon = ...
 
 local ROW_HEIGHT = 18
 local HEADER_HEIGHT = 24
+local TAB_HEIGHT = 22
 local BOSS_COLUMN_WIDTH = 65
 local NAME_COLUMN_WIDTH = 150
+local VALOR_COLUMN_WIDTH = 80
+local PROGRESS_COLUMN_WIDTH = 120
+
+-- Main window tabs
+local MAIN_TAB_BOSSES = 1
+local MAIN_TAB_VALOR = 2
 
 -- Main frame
 local mainFrame = nil
-local rows = {}
+local bossRows = {}
+local valorRows = {}
 local contextMenu = nil
 
 -- Create atlas icon string
@@ -24,9 +32,81 @@ local function GetClassColor(class)
     return {r = 1, g = 1, b = 1}
 end
 
--- Create the main frame (no scroll, dynamic height)
+-- Get valor progress color based on percentage
+local function GetValorProgressColor(earned, max)
+    if max <= 0 then max = addon.VALOR_WEEKLY_CAP end
+    local pct = earned / max
+
+    if pct >= 1.0 then
+        return addon.COLORS.VALOR_CAPPED
+    elseif pct >= 0.5 then
+        return addon.COLORS.VALOR_HIGH
+    else
+        return addon.COLORS.VALOR_LOW
+    end
+end
+
+-- Create a main window tab button
+local function CreateMainWindowTab(parent, id, text, onClick)
+    local tab = CreateFrame("Button", nil, parent)
+    tab:SetSize(80, TAB_HEIGHT)
+    tab.id = id
+
+    -- Background
+    tab.bg = tab:CreateTexture(nil, "BACKGROUND")
+    tab.bg:SetAllPoints()
+    tab.bg:SetColorTexture(0.15, 0.15, 0.15, 0.9)
+
+    -- Text
+    tab.text = tab:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    tab.text:SetPoint("CENTER")
+    tab.text:SetText(text)
+    tab.text:SetTextColor(0.7, 0.7, 0.7)
+
+    -- Selected indicator (bottom border)
+    tab.selected = tab:CreateTexture(nil, "BORDER")
+    tab.selected:SetPoint("BOTTOMLEFT", 0, 0)
+    tab.selected:SetPoint("BOTTOMRIGHT", 0, 0)
+    tab.selected:SetHeight(2)
+    tab.selected:SetColorTexture(1, 0.82, 0, 1)
+    tab.selected:Hide()
+
+    tab:SetScript("OnClick", function(self)
+        PlaySound(SOUNDKIT.IG_MAINMENU_OPTION)
+        if onClick then onClick(self.id) end
+    end)
+
+    tab:SetScript("OnEnter", function(self)
+        if not self.isSelected then
+            self.bg:SetColorTexture(0.25, 0.25, 0.25, 0.9)
+        end
+    end)
+
+    tab:SetScript("OnLeave", function(self)
+        if not self.isSelected then
+            self.bg:SetColorTexture(0.15, 0.15, 0.15, 0.9)
+        end
+    end)
+
+    return tab
+end
+
+local function SetMainTabSelected(tab, selected)
+    tab.isSelected = selected
+    if selected then
+        tab.bg:SetColorTexture(0.1, 0.1, 0.1, 1)
+        tab.selected:Show()
+        tab.text:SetTextColor(1, 0.82, 0)
+    else
+        tab.bg:SetColorTexture(0.15, 0.15, 0.15, 0.9)
+        tab.selected:Hide()
+        tab.text:SetTextColor(0.7, 0.7, 0.7)
+    end
+end
+
+-- Create the main frame
 local function CreateMainFrame()
-    local frame = CreateFrame("Frame", "WorldBossChecklistFrame", UIParent, "BackdropTemplate")
+    local frame = CreateFrame("Frame", "WeekliesTrackerFrame", UIParent, "BackdropTemplate")
     frame:SetSize(500, 200)
     frame:SetPoint("CENTER")
     frame:SetMovable(true)
@@ -70,7 +150,7 @@ local function CreateMainFrame()
     -- Title
     local title = header:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     title:SetPoint("LEFT", header, "LEFT", 8, 0)
-    title:SetText("World Boss Checklist")
+    title:SetText("Weeklies Tracker")
     title:SetTextColor(1, 0.82, 0)
     frame.title = title
 
@@ -105,11 +185,91 @@ local function CreateMainFrame()
     end)
     frame.settingsBtn = settingsBtn
 
-    -- Content frame (direct child, no scroll)
-    local content = CreateFrame("Frame", nil, frame)
-    content:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 4, 0)
-    content:SetPoint("TOPRIGHT", header, "BOTTOMRIGHT", -4, 0)
-    frame.contentFrame = content
+    -- Tab container (below header)
+    local tabContainer = CreateFrame("Frame", nil, frame)
+    tabContainer:SetHeight(TAB_HEIGHT)
+    tabContainer:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 4, 0)
+    tabContainer:SetPoint("TOPRIGHT", header, "BOTTOMRIGHT", -4, 0)
+    frame.tabContainer = tabContainer
+
+    -- Create tabs
+    frame.mainTabs = {}
+
+    local function SwitchMainTab(tabId)
+        addon.db.options.mainWindowTab = tabId
+        for _, t in pairs(frame.mainTabs) do
+            SetMainTabSelected(t, t.id == tabId)
+        end
+        -- Show/hide content
+        frame.bossContent:SetShown(tabId == MAIN_TAB_BOSSES)
+        frame.valorContent:SetShown(tabId == MAIN_TAB_VALOR)
+        frame.bossHeaders:SetShown(tabId == MAIN_TAB_BOSSES)
+        frame.valorHeaders:SetShown(tabId == MAIN_TAB_VALOR)
+        addon:UpdateUI()
+    end
+    frame.SwitchMainTab = SwitchMainTab
+
+    local bossTab = CreateMainWindowTab(tabContainer, MAIN_TAB_BOSSES, "Bosses", SwitchMainTab)
+    bossTab:SetPoint("LEFT", tabContainer, "LEFT", 0, 0)
+    frame.mainTabs[MAIN_TAB_BOSSES] = bossTab
+
+    local valorTab = CreateMainWindowTab(tabContainer, MAIN_TAB_VALOR, "Valor", SwitchMainTab)
+    valorTab:SetPoint("LEFT", bossTab, "RIGHT", 2, 0)
+    frame.mainTabs[MAIN_TAB_VALOR] = valorTab
+
+    -- Boss headers
+    local bossHeaders = CreateFrame("Frame", nil, frame)
+    bossHeaders:SetHeight(ROW_HEIGHT)
+    bossHeaders:SetPoint("TOPLEFT", tabContainer, "BOTTOMLEFT", 0, -2)
+    bossHeaders:SetPoint("TOPRIGHT", tabContainer, "BOTTOMRIGHT", 0, -2)
+    bossHeaders.bg = bossHeaders:CreateTexture(nil, "BACKGROUND")
+    bossHeaders.bg:SetAllPoints()
+    bossHeaders.bg:SetColorTexture(0.15, 0.15, 0.15, 0.9)
+    bossHeaders.charLabel = bossHeaders:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    bossHeaders.charLabel:SetPoint("LEFT", bossHeaders, "LEFT", 16, 0)
+    bossHeaders.charLabel:SetText("Character")
+    bossHeaders.charLabel:SetTextColor(0.7, 0.7, 0.7)
+    bossHeaders.bossLabels = {}
+    bossHeaders.tooltipFrames = {}
+    frame.bossHeaders = bossHeaders
+
+    -- Valor headers
+    local valorHeaders = CreateFrame("Frame", nil, frame)
+    valorHeaders:SetHeight(ROW_HEIGHT)
+    valorHeaders:SetPoint("TOPLEFT", tabContainer, "BOTTOMLEFT", 0, -2)
+    valorHeaders:SetPoint("TOPRIGHT", tabContainer, "BOTTOMRIGHT", 0, -2)
+    valorHeaders.bg = valorHeaders:CreateTexture(nil, "BACKGROUND")
+    valorHeaders.bg:SetAllPoints()
+    valorHeaders.bg:SetColorTexture(0.15, 0.15, 0.15, 0.9)
+    valorHeaders.charLabel = valorHeaders:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    valorHeaders.charLabel:SetPoint("LEFT", valorHeaders, "LEFT", 16, 0)
+    valorHeaders.charLabel:SetText("Character")
+    valorHeaders.charLabel:SetTextColor(0.7, 0.7, 0.7)
+    valorHeaders.currentLabel = valorHeaders:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    valorHeaders.currentLabel:SetPoint("LEFT", valorHeaders, "LEFT", NAME_COLUMN_WIDTH + 16, 0)
+    valorHeaders.currentLabel:SetWidth(VALOR_COLUMN_WIDTH)
+    valorHeaders.currentLabel:SetText("Current")
+    valorHeaders.currentLabel:SetTextColor(0.7, 0.7, 0.7)
+    valorHeaders.progressLabel = valorHeaders:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    valorHeaders.progressLabel:SetPoint("LEFT", valorHeaders, "LEFT", NAME_COLUMN_WIDTH + 16 + VALOR_COLUMN_WIDTH, 0)
+    valorHeaders.progressLabel:SetWidth(PROGRESS_COLUMN_WIDTH)
+    valorHeaders.progressLabel:SetText("Weekly Progress")
+    valorHeaders.progressLabel:SetTextColor(0.7, 0.7, 0.7)
+    valorHeaders:Hide()
+    frame.valorHeaders = valorHeaders
+
+    -- Boss content frame
+    local bossContent = CreateFrame("Frame", nil, frame)
+    bossContent:SetPoint("TOPLEFT", bossHeaders, "BOTTOMLEFT", 0, -2)
+    bossContent:SetPoint("TOPRIGHT", bossHeaders, "BOTTOMRIGHT", 0, -2)
+    frame.bossContent = bossContent
+
+    -- Valor content frame
+    local valorContent = CreateFrame("Frame", nil, frame)
+    valorContent:SetPoint("TOPLEFT", valorHeaders, "BOTTOMLEFT", 0, -2)
+    valorContent:SetPoint("TOPRIGHT", valorHeaders, "BOTTOMRIGHT", 0, -2)
+    valorContent:Hide()
+    frame.valorContent = valorContent
 
     return frame
 end
@@ -159,8 +319,8 @@ local function CreateRealmHeader(parent, realmName, yOffset)
     return row
 end
 
--- Create a character row
-local function CreateCharacterRow(parent, yOffset)
+-- Create a character row for bosses
+local function CreateBossCharacterRow(parent, yOffset)
     local row = CreateFrame("Button", nil, parent)
     row:SetHeight(ROW_HEIGHT)
     row:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, yOffset)
@@ -201,27 +361,55 @@ local function CreateCharacterRow(parent, yOffset)
     return row
 end
 
--- Create boss column headers
-local function CreateBossHeaders(parent)
-    local headers = CreateFrame("Frame", nil, parent)
-    headers:SetHeight(ROW_HEIGHT)
-    headers:SetPoint("TOPLEFT", parent.header, "BOTTOMLEFT", 4, 0)
-    headers:SetPoint("TOPRIGHT", parent.header, "BOTTOMRIGHT", -4, 0)
+-- Create a character row for valor
+local function CreateValorCharacterRow(parent, yOffset)
+    local row = CreateFrame("Button", nil, parent)
+    row:SetHeight(ROW_HEIGHT)
+    row:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, yOffset)
+    row:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, yOffset)
+    row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 
-    headers.bg = headers:CreateTexture(nil, "BACKGROUND")
-    headers.bg:SetAllPoints()
-    headers.bg:SetColorTexture(0.15, 0.15, 0.15, 0.9)
+    -- Background
+    row.bg = row:CreateTexture(nil, "BACKGROUND")
+    row.bg:SetAllPoints()
+    row.bg:SetColorTexture(0.1, 0.1, 0.1, 0.3)
 
-    -- "Character" label
-    headers.charLabel = headers:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    headers.charLabel:SetPoint("LEFT", headers, "LEFT", 16, 0)
-    headers.charLabel:SetText("Character")
-    headers.charLabel:SetTextColor(0.7, 0.7, 0.7)
+    -- Character name (with level)
+    row.nameText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    row.nameText:SetPoint("LEFT", row, "LEFT", 16, 0)
+    row.nameText:SetWidth(NAME_COLUMN_WIDTH)
+    row.nameText:SetJustifyH("LEFT")
 
-    headers.bossLabels = {}
-    headers.tooltipFrames = {}
+    -- Current valor
+    row.currentText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    row.currentText:SetPoint("LEFT", row, "LEFT", NAME_COLUMN_WIDTH + 16, 0)
+    row.currentText:SetWidth(VALOR_COLUMN_WIDTH)
+    row.currentText:SetJustifyH("CENTER")
 
-    return headers
+    -- Weekly progress
+    row.progressText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    row.progressText:SetPoint("LEFT", row, "LEFT", NAME_COLUMN_WIDTH + 16 + VALOR_COLUMN_WIDTH, 0)
+    row.progressText:SetWidth(PROGRESS_COLUMN_WIDTH)
+    row.progressText:SetJustifyH("LEFT")
+
+    row.isValorRow = true
+
+    -- Highlight
+    row:SetScript("OnEnter", function(self)
+        self.bg:SetColorTexture(0.2, 0.2, 0.2, 0.5)
+    end)
+    row:SetScript("OnLeave", function(self)
+        self.bg:SetColorTexture(0.1, 0.1, 0.1, 0.3)
+    end)
+
+    -- Right-click menu
+    row:SetScript("OnClick", function(self, button)
+        if button == "RightButton" and self.charData then
+            addon:ShowContextMenu(self, self.charData)
+        end
+    end)
+
+    return row
 end
 
 -- Update boss column headers
@@ -247,7 +435,7 @@ local function UpdateBossHeaders(headers)
         label:ClearAllPoints()
         label:SetPoint("LEFT", headers, "LEFT", xOffset, 0)
         label:SetWidth(BOSS_COLUMN_WIDTH)
-        label:SetText(boss.name)  -- Full boss name
+        label:SetText(boss.name)
         label:SetTextColor(0.7, 0.7, 0.7)
         label:Show()
 
@@ -282,8 +470,8 @@ local function UpdateBossHeaders(headers)
     mainFrame:SetWidth(math.max(totalWidth, 350))
 end
 
--- Update a character row with data
-local function UpdateCharacterRow(row, charData, enabledBosses)
+-- Update a character row with boss data
+local function UpdateBossCharacterRow(row, charData, enabledBosses)
     local classColor = GetClassColor(charData.class)
 
     -- Format: (level) Name
@@ -328,9 +516,42 @@ local function UpdateCharacterRow(row, charData, enabledBosses)
     end
 end
 
+-- Update a character row with valor data
+local function UpdateValorCharacterRow(row, charData)
+    local classColor = GetClassColor(charData.class)
+
+    -- Format: (level) Name
+    local nameStr = string.format("(%d) |cff%02x%02x%02x%s|r",
+        charData.level or 0,
+        classColor.r * 255,
+        classColor.g * 255,
+        classColor.b * 255,
+        charData.name)
+    row.nameText:SetText(nameStr)
+
+    -- Store char data for context menu
+    row.charData = charData
+
+    -- Get valor data
+    local valor = charData.valor or {}
+    local current = valor.current or 0
+    local earned = valor.earnedThisWeek or 0
+    local max = valor.weeklyMax or addon.VALOR_WEEKLY_CAP
+
+    -- Current valor
+    row.currentText:SetText(tostring(current))
+    row.currentText:SetTextColor(1, 1, 1)
+
+    -- Weekly progress with color
+    local progressColor = GetValorProgressColor(earned, max)
+    local progressStr = string.format("%d/%d", earned, max)
+    row.progressText:SetText(progressStr)
+    row.progressText:SetTextColor(progressColor[1], progressColor[2], progressColor[3])
+end
+
 -- Create context menu
 local function CreateContextMenu()
-    local menu = CreateFrame("Frame", "WorldBossChecklistContextMenu", UIParent, "UIDropDownMenuTemplate")
+    local menu = CreateFrame("Frame", "WeekliesTrackerContextMenu", UIParent, "UIDropDownMenuTemplate")
     return menu
 end
 
@@ -358,7 +579,7 @@ function addon:ShowContextMenu(anchor, charData)
             text = "Ban Character",
             notCheckable = true,
             func = function()
-                StaticPopup_Show("WBC_CONFIRM_BAN", charData.fullName)
+                StaticPopup_Show("WT_CONFIRM_BAN", charData.fullName)
             end,
         },
         {
@@ -372,7 +593,7 @@ function addon:ShowContextMenu(anchor, charData)
 end
 
 -- Static popup for ban confirmation
-StaticPopupDialogs["WBC_CONFIRM_BAN"] = {
+StaticPopupDialogs["WT_CONFIRM_BAN"] = {
     text = "Ban %s?\n\nThis character will be removed and won't be added again when you log in.",
     button1 = "Yes",
     button2 = "No",
@@ -391,10 +612,6 @@ function addon:InitializeUI()
     if mainFrame then return end
 
     mainFrame = CreateMainFrame()
-    mainFrame.bossHeaders = CreateBossHeaders(mainFrame)
-
-    -- Adjust content frame position to account for boss headers
-    mainFrame.contentFrame:SetPoint("TOPLEFT", mainFrame.bossHeaders, "BOTTOMLEFT", 0, -2)
 
     -- Restore position
     if addon.db.options.framePosition then
@@ -405,6 +622,15 @@ function addon:InitializeUI()
 
     -- Apply scale
     mainFrame:SetScale(addon.db.options.frameScale or 1.0)
+
+    -- Set initial tab
+    local initialTab = addon.db.options.mainWindowTab or MAIN_TAB_BOSSES
+    SetMainTabSelected(mainFrame.mainTabs[MAIN_TAB_BOSSES], initialTab == MAIN_TAB_BOSSES)
+    SetMainTabSelected(mainFrame.mainTabs[MAIN_TAB_VALOR], initialTab == MAIN_TAB_VALOR)
+    mainFrame.bossContent:SetShown(initialTab == MAIN_TAB_BOSSES)
+    mainFrame.valorContent:SetShown(initialTab == MAIN_TAB_VALOR)
+    mainFrame.bossHeaders:SetShown(initialTab == MAIN_TAB_BOSSES)
+    mainFrame.valorHeaders:SetShown(initialTab == MAIN_TAB_VALOR)
 
     -- Start hidden
     mainFrame:Hide()
@@ -418,32 +644,30 @@ function addon:InitializeUI()
     addon:InitializeTitanPanel()
 end
 
--- Update the UI
-function addon:UpdateUI()
-    if not mainFrame or not mainFrame:IsShown() then return end
-
-    local content = mainFrame.contentFrame
-    local enabledBosses = self:GetEnabledBosses()
+-- Update boss content
+local function UpdateBossContent()
+    local content = mainFrame.bossContent
+    local enabledBosses = addon:GetEnabledBosses()
 
     -- Update boss headers
     UpdateBossHeaders(mainFrame.bossHeaders)
 
     -- Clear old rows
-    for _, row in ipairs(rows) do
+    for _, row in ipairs(bossRows) do
         row:Hide()
     end
 
-    local allCharacters = self:GetAllCharacters()
+    local allCharacters = addon:GetAllCharacters()
     local yOffset = 0
     local rowIndex = 0
 
     for _, realmData in ipairs(allCharacters) do
         -- Realm header
         rowIndex = rowIndex + 1
-        local realmRow = rows[rowIndex]
+        local realmRow = bossRows[rowIndex]
         if not realmRow or not realmRow.isRealmHeader then
             realmRow = CreateRealmHeader(content, realmData.name, yOffset)
-            rows[rowIndex] = realmRow
+            bossRows[rowIndex] = realmRow
         else
             realmRow:ClearAllPoints()
             realmRow:SetPoint("TOPLEFT", content, "TOPLEFT", 0, yOffset)
@@ -462,19 +686,19 @@ function addon:UpdateUI()
         -- Characters (if not collapsed)
         if not collapsed then
             for _, charData in ipairs(realmData.characters) do
-                if self:ShouldShowCharacter(charData) then
+                if addon:ShouldShowCharacter(charData) then
                     rowIndex = rowIndex + 1
-                    local charRow = rows[rowIndex]
+                    local charRow = bossRows[rowIndex]
                     if not charRow or not charRow.isCharacterRow then
-                        charRow = CreateCharacterRow(content, yOffset)
-                        rows[rowIndex] = charRow
+                        charRow = CreateBossCharacterRow(content, yOffset)
+                        bossRows[rowIndex] = charRow
                     else
                         charRow:ClearAllPoints()
                         charRow:SetPoint("TOPLEFT", content, "TOPLEFT", 0, yOffset)
                         charRow:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, yOffset)
                     end
 
-                    UpdateCharacterRow(charRow, charData, enabledBosses)
+                    UpdateBossCharacterRow(charRow, charData, enabledBosses)
                     charRow:Show()
 
                     yOffset = yOffset - ROW_HEIGHT
@@ -487,9 +711,95 @@ function addon:UpdateUI()
     local totalHeight = math.abs(yOffset)
     content:SetHeight(math.max(totalHeight, 20))
 
-    -- Update frame height (no max limit, grows with content)
-    local frameHeight = HEADER_HEIGHT + ROW_HEIGHT + totalHeight + 10
-    frameHeight = math.max(frameHeight, 80)
+    return totalHeight
+end
+
+-- Update valor content
+local function UpdateValorContent()
+    local content = mainFrame.valorContent
+
+    -- Clear old rows
+    for _, row in ipairs(valorRows) do
+        row:Hide()
+    end
+
+    -- Set fixed width for valor display
+    local totalWidth = NAME_COLUMN_WIDTH + 20 + VALOR_COLUMN_WIDTH + PROGRESS_COLUMN_WIDTH + 20
+    mainFrame:SetWidth(math.max(totalWidth, 350))
+
+    local allCharacters = addon:GetAllCharacters()
+    local yOffset = 0
+    local rowIndex = 0
+
+    for _, realmData in ipairs(allCharacters) do
+        -- Realm header
+        rowIndex = rowIndex + 1
+        local realmRow = valorRows[rowIndex]
+        if not realmRow or not realmRow.isRealmHeader then
+            realmRow = CreateRealmHeader(content, realmData.name, yOffset)
+            valorRows[rowIndex] = realmRow
+        else
+            realmRow:ClearAllPoints()
+            realmRow:SetPoint("TOPLEFT", content, "TOPLEFT", 0, yOffset)
+            realmRow:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, yOffset)
+            realmRow.text:SetText(realmData.name)
+            realmRow.realmName = realmData.name
+        end
+
+        -- Update collapse indicator
+        local collapsed = addon.db.options.collapsedRealms[realmData.name]
+        realmRow.indicator:SetText(collapsed and "+" or "-")
+        realmRow:Show()
+
+        yOffset = yOffset - ROW_HEIGHT
+
+        -- Characters (if not collapsed)
+        if not collapsed then
+            for _, charData in ipairs(realmData.characters) do
+                if addon:ShouldShowCharacterValor(charData) then
+                    rowIndex = rowIndex + 1
+                    local charRow = valorRows[rowIndex]
+                    if not charRow or not charRow.isValorRow then
+                        charRow = CreateValorCharacterRow(content, yOffset)
+                        valorRows[rowIndex] = charRow
+                    else
+                        charRow:ClearAllPoints()
+                        charRow:SetPoint("TOPLEFT", content, "TOPLEFT", 0, yOffset)
+                        charRow:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, yOffset)
+                    end
+
+                    UpdateValorCharacterRow(charRow, charData)
+                    charRow:Show()
+
+                    yOffset = yOffset - ROW_HEIGHT
+                end
+            end
+        end
+    end
+
+    -- Update content height
+    local totalHeight = math.abs(yOffset)
+    content:SetHeight(math.max(totalHeight, 20))
+
+    return totalHeight
+end
+
+-- Update the UI
+function addon:UpdateUI()
+    if not mainFrame or not mainFrame:IsShown() then return end
+
+    local currentTab = addon.db.options.mainWindowTab or MAIN_TAB_BOSSES
+    local totalHeight = 0
+
+    if currentTab == MAIN_TAB_BOSSES then
+        totalHeight = UpdateBossContent()
+    else
+        totalHeight = UpdateValorContent()
+    end
+
+    -- Update frame height
+    local frameHeight = HEADER_HEIGHT + TAB_HEIGHT + ROW_HEIGHT + totalHeight + 14
+    frameHeight = math.max(frameHeight, 100)
     mainFrame:SetHeight(frameHeight)
 end
 
@@ -533,7 +843,7 @@ function addon:InitializeMinimapButton()
     if not addon.db.options.minimapButton then return end
 
     -- Create minimap button
-    minimapButton = CreateFrame("Button", "WorldBossChecklistMinimapButton", Minimap)
+    minimapButton = CreateFrame("Button", "WeekliesTrackerMinimapButton", Minimap)
     minimapButton:SetSize(31, 31)
     minimapButton:SetFrameStrata("MEDIUM")
     minimapButton:SetFrameLevel(8)
@@ -606,7 +916,21 @@ function addon:InitializeMinimapButton()
     -- Tooltip
     minimapButton:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-        GameTooltip:AddLine("World Boss Checklist", 1, 0.82, 0)
+        GameTooltip:AddLine("Weeklies Tracker", 1, 0.82, 0)
+        GameTooltip:AddLine(" ")
+
+        -- Show current character's valor progress
+        local info = addon:GetCurrentCharacterInfo()
+        if addon.db.realms[info.realm] and addon.db.realms[info.realm][info.name] then
+            local charData = addon.db.realms[info.realm][info.name]
+            local valor = charData.valor or {}
+            local earned = valor.earnedThisWeek or 0
+            local max = valor.weeklyMax or addon.VALOR_WEEKLY_CAP
+            local color = GetValorProgressColor(earned, max)
+            GameTooltip:AddLine(string.format("Valor: |cff%02x%02x%02x%d/%d|r",
+                color[1] * 255, color[2] * 255, color[3] * 255, earned, max), 0.8, 0.8, 0.8)
+        end
+
         GameTooltip:AddLine(" ")
         GameTooltip:AddLine("|cffffffffLeft-click:|r Toggle window", 0.8, 0.8, 0.8)
         GameTooltip:AddLine("|cffffffffRight-click:|r Settings", 0.8, 0.8, 0.8)
@@ -648,21 +972,21 @@ function addon:InitializeTitanPanel()
     -- Check if Titan Panel is loaded
     if not TitanPanelButton_OnLoad then return end
 
-    local TITAN_ID = "WorldBossChecklist"
+    local TITAN_ID = "WeekliesTracker"
 
     -- Create the Titan Panel button
-    local titanButton = CreateFrame("Button", "TitanPanelWorldBossChecklistButton", UIParent, "TitanPanelComboTemplate")
+    local titanButton = CreateFrame("Button", "TitanPanelWeekliesTrackerButton", UIParent, "TitanPanelComboTemplate")
     titanButton:SetFrameStrata("FULLSCREEN")
 
     -- Define the registry
     titanButton.registry = {
         id = TITAN_ID,
         category = "Information",
-        version = "1.1.0",
-        menuText = "World Boss Checklist",
-        buttonTextFunction = "TitanPanelWorldBossChecklistButton_GetButtonText",
-        tooltipTitle = "World Boss Checklist",
-        tooltipTextFunction = "TitanPanelWorldBossChecklistButton_GetTooltipText",
+        version = "2.0.0",
+        menuText = "Weeklies Tracker",
+        buttonTextFunction = "TitanPanelWeekliesTrackerButton_GetButtonText",
+        tooltipTitle = "Weeklies Tracker",
+        tooltipTextFunction = "TitanPanelWeekliesTrackerButton_GetTooltipText",
         icon = "Interface\\TARGETINGFRAME\\UI-RaidTargetingIcon_8",
         iconWidth = 16,
         savedVariables = {
@@ -678,31 +1002,23 @@ function addon:InitializeTitanPanel()
 end
 
 -- Titan Panel button text function
-function TitanPanelWorldBossChecklistButton_GetButtonText(id)
-    local unkilled = 0
-    local total = 0
-    local enabledBosses = addon:GetEnabledBosses()
-
-    -- Get current character's unkilled count
+function TitanPanelWeekliesTrackerButton_GetButtonText(id)
     local info = addon:GetCurrentCharacterInfo()
+    local valor = 0
+    local max = addon.VALOR_WEEKLY_CAP
+
     if addon.db.realms[info.realm] and addon.db.realms[info.realm][info.name] then
         local charData = addon.db.realms[info.realm][info.name]
-        for _, boss in ipairs(enabledBosses) do
-            total = total + 1
-            if not charData.bosses[boss.key] then
-                unkilled = unkilled + 1
-            end
-        end
-    else
-        total = #enabledBosses
-        unkilled = total
+        local v = charData.valor or {}
+        valor = v.earnedThisWeek or 0
+        max = v.weeklyMax or addon.VALOR_WEEKLY_CAP
     end
 
-    return "WBC", unkilled .. "/" .. total
+    return "WT", string.format("%d/%d", valor, max)
 end
 
 -- Titan Panel tooltip function
-function TitanPanelWorldBossChecklistButton_GetTooltipText()
+function TitanPanelWeekliesTrackerButton_GetTooltipText()
     local lines = {}
     local enabledBosses = addon:GetEnabledBosses()
     local info = addon:GetCurrentCharacterInfo()
@@ -710,13 +1026,25 @@ function TitanPanelWorldBossChecklistButton_GetTooltipText()
     table.insert(lines, "|cff00ff00" .. info.name .. "|r")
     table.insert(lines, " ")
 
+    -- Valor info
     if addon.db.realms[info.realm] and addon.db.realms[info.realm][info.name] then
         local charData = addon.db.realms[info.realm][info.name]
+        local valor = charData.valor or {}
+        local earned = valor.earnedThisWeek or 0
+        local max = valor.weeklyMax or addon.VALOR_WEEKLY_CAP
+        local color = GetValorProgressColor(earned, max)
+        table.insert(lines, string.format("|cffffffffValor:|r |cff%02x%02x%02x%d/%d|r",
+            color[1] * 255, color[2] * 255, color[3] * 255, earned, max))
+        table.insert(lines, " ")
+
+        -- Boss info
         for _, boss in ipairs(enabledBosses) do
             local status = charData.bosses[boss.key] and "|cff00ff00Killed|r" or "|cffff0000Not Killed|r"
             table.insert(lines, boss.name .. ": " .. status)
         end
     else
+        table.insert(lines, "|cffffffffValor:|r |cffff00000/1600|r")
+        table.insert(lines, " ")
         for _, boss in ipairs(enabledBosses) do
             table.insert(lines, boss.name .. ": |cffff0000Not Killed|r")
         end
@@ -730,11 +1058,11 @@ function TitanPanelWorldBossChecklistButton_GetTooltipText()
 end
 
 -- Titan Panel right-click menu
-function TitanPanelRightClickMenu_PrepareWorldBossChecklistMenu()
+function TitanPanelRightClickMenu_PrepareWeekliesTrackerMenu()
     local info = {}
 
     -- Title
-    info.text = "World Boss Checklist"
+    info.text = "Weeklies Tracker"
     info.isTitle = true
     info.notCheckable = true
     UIDropDownMenu_AddButton(info)
@@ -757,12 +1085,12 @@ function TitanPanelRightClickMenu_PrepareWorldBossChecklistMenu()
     TitanPanelRightClickMenu_AddSpacer()
 
     -- Standard Titan options
-    TitanPanelRightClickMenu_AddToggleIcon("WorldBossChecklist")
-    TitanPanelRightClickMenu_AddToggleLabelText("WorldBossChecklist")
+    TitanPanelRightClickMenu_AddToggleIcon("WeekliesTracker")
+    TitanPanelRightClickMenu_AddToggleLabelText("WeekliesTracker")
 
     -- Hide option
     TitanPanelRightClickMenu_AddSpacer()
-    TitanPanelRightClickMenu_AddCommand("Hide", "WorldBossChecklist", TITAN_PANEL_MENU_FUNC_HIDE)
+    TitanPanelRightClickMenu_AddCommand("Hide", "WeekliesTracker", TITAN_PANEL_MENU_FUNC_HIDE)
 end
 
 -------------------------------------------------
@@ -770,9 +1098,10 @@ end
 -------------------------------------------------
 
 local settingsPanel = nil
-local TAB_GENERAL = 1
-local TAB_BOSSES = 2
-local TAB_CHARACTERS = 3
+local SETTINGS_TAB_GENERAL = 1
+local SETTINGS_TAB_BOSSES = 2
+local SETTINGS_TAB_VALOR = 3
+local SETTINGS_TAB_CHARACTERS = 4
 
 local function CreateCheckbox(parent, label, tooltip, onClick)
     local cb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
@@ -808,9 +1137,9 @@ local function CreateSlider(parent, label, minVal, maxVal, step, onValueChanged)
     return slider
 end
 
-local function CreateTab(parent, id, text, onClick)
+local function CreateSettingsTab(parent, id, text, onClick)
     local tab = CreateFrame("Button", nil, parent)
-    tab:SetSize(100, 28)
+    tab:SetSize(85, 28)
     tab.id = id
 
     -- Background
@@ -851,7 +1180,7 @@ local function CreateTab(parent, id, text, onClick)
     return tab
 end
 
-local function SetTabSelected(tab, selected)
+local function SetSettingsTabSelected(tab, selected)
     tab.isSelected = selected
     if selected then
         tab.bg:SetColorTexture(0.15, 0.15, 0.15, 1)
@@ -867,8 +1196,8 @@ end
 function addon:CreateSettingsPanel()
     if settingsPanel then return settingsPanel end
 
-    local panel = CreateFrame("Frame", "WorldBossChecklistSettingsPanel", UIParent, "BackdropTemplate")
-    panel:SetSize(400, 450)
+    local panel = CreateFrame("Frame", "WeekliesTrackerSettingsPanel", UIParent, "BackdropTemplate")
+    panel:SetSize(420, 480)
     panel:SetPoint("CENTER")
     panel:SetMovable(true)
     panel:SetClampedToScreen(true)
@@ -892,7 +1221,7 @@ function addon:CreateSettingsPanel()
     -- Header
     local header = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     header:SetPoint("TOP", panel, "TOP", 0, -10)
-    header:SetText("World Boss Checklist Settings")
+    header:SetText("Weeklies Tracker Settings")
     header:SetTextColor(1, 0.82, 0)
 
     -- Close button
@@ -906,32 +1235,37 @@ function addon:CreateSettingsPanel()
     tabContainer:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -10, -35)
     tabContainer:SetHeight(28)
 
-    local function SwitchTab(tabId)
+    local function SwitchSettingsTab(tabId)
         panel.currentTab = tabId
         for _, t in pairs(panel.tabs) do
-            SetTabSelected(t, t.id == tabId)
+            SetSettingsTabSelected(t, t.id == tabId)
         end
         -- Show/hide content
-        panel.generalContent:SetShown(tabId == TAB_GENERAL)
-        panel.bossesContent:SetShown(tabId == TAB_BOSSES)
-        panel.charactersContent:SetShown(tabId == TAB_CHARACTERS)
+        panel.generalContent:SetShown(tabId == SETTINGS_TAB_GENERAL)
+        panel.bossesContent:SetShown(tabId == SETTINGS_TAB_BOSSES)
+        panel.valorContent:SetShown(tabId == SETTINGS_TAB_VALOR)
+        panel.charactersContent:SetShown(tabId == SETTINGS_TAB_CHARACTERS)
 
-        if tabId == TAB_CHARACTERS then
+        if tabId == SETTINGS_TAB_CHARACTERS then
             addon:UpdateCharacterList()
         end
     end
 
-    local tab1 = CreateTab(tabContainer, TAB_GENERAL, "General", SwitchTab)
+    local tab1 = CreateSettingsTab(tabContainer, SETTINGS_TAB_GENERAL, "General", SwitchSettingsTab)
     tab1:SetPoint("LEFT", tabContainer, "LEFT", 0, 0)
-    panel.tabs[TAB_GENERAL] = tab1
+    panel.tabs[SETTINGS_TAB_GENERAL] = tab1
 
-    local tab2 = CreateTab(tabContainer, TAB_BOSSES, "Bosses", SwitchTab)
+    local tab2 = CreateSettingsTab(tabContainer, SETTINGS_TAB_BOSSES, "Bosses", SwitchSettingsTab)
     tab2:SetPoint("LEFT", tab1, "RIGHT", 5, 0)
-    panel.tabs[TAB_BOSSES] = tab2
+    panel.tabs[SETTINGS_TAB_BOSSES] = tab2
 
-    local tab3 = CreateTab(tabContainer, TAB_CHARACTERS, "Characters", SwitchTab)
+    local tab3 = CreateSettingsTab(tabContainer, SETTINGS_TAB_VALOR, "Valor", SwitchSettingsTab)
     tab3:SetPoint("LEFT", tab2, "RIGHT", 5, 0)
-    panel.tabs[TAB_CHARACTERS] = tab3
+    panel.tabs[SETTINGS_TAB_VALOR] = tab3
+
+    local tab4 = CreateSettingsTab(tabContainer, SETTINGS_TAB_CHARACTERS, "Characters", SwitchSettingsTab)
+    tab4:SetPoint("LEFT", tab3, "RIGHT", 5, 0)
+    panel.tabs[SETTINGS_TAB_CHARACTERS] = tab4
 
     -- Content area
     local contentArea = CreateFrame("Frame", nil, panel, "BackdropTemplate")
@@ -956,7 +1290,7 @@ function addon:CreateSettingsPanel()
     local yPos = -20
 
     -- Show Unkilled Only
-    local cbUnkilled = CreateCheckbox(generalContent, "Show Unkilled Only",
+    local cbUnkilled = CreateCheckbox(generalContent, "Show Unkilled Only (Bosses)",
         "Only show characters that haven't killed all tracked bosses",
         function(checked)
             addon.db.options.showUnkilledOnly = checked
@@ -1044,6 +1378,50 @@ function addon:CreateSettingsPanel()
     end
 
     -------------------------------------------------
+    -- Valor Tab Content
+    -------------------------------------------------
+    local valorContent = CreateFrame("Frame", nil, contentArea)
+    valorContent:SetAllPoints()
+    valorContent:Hide()
+    panel.valorContent = valorContent
+
+    local valorHeader = valorContent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    valorHeader:SetPoint("TOPLEFT", valorContent, "TOPLEFT", 20, -15)
+    valorHeader:SetText("Valor Tracking Options:")
+    valorHeader:SetTextColor(0.9, 0.9, 0.9)
+
+    yPos = -45
+
+    -- Track Valor
+    local cbTrackValor = CreateCheckbox(valorContent, "Track Valor Points",
+        "Enable valor point tracking across characters",
+        function(checked)
+            addon.db.options.trackValor = checked
+            addon:UpdateUI()
+        end)
+    cbTrackValor:SetPoint("TOPLEFT", valorContent, "TOPLEFT", 20, yPos)
+    panel.cbTrackValor = cbTrackValor
+    yPos = yPos - 30
+
+    -- Show Not Capped Only
+    local cbNotCapped = CreateCheckbox(valorContent, "Show Not Capped Only",
+        "Only show characters that haven't reached the weekly valor cap",
+        function(checked)
+            addon.db.options.showNotCappedOnly = checked
+            addon:UpdateUI()
+        end)
+    cbNotCapped:SetPoint("TOPLEFT", valorContent, "TOPLEFT", 20, yPos)
+    panel.cbNotCapped = cbNotCapped
+    yPos = yPos - 40
+
+    -- Info text
+    local valorInfo = valorContent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    valorInfo:SetPoint("TOPLEFT", valorContent, "TOPLEFT", 20, yPos)
+    valorInfo:SetText("|cff888888Weekly cap is 1600 valor points.\nProgress colors: Green (capped), Yellow (>=50%), Orange (<50%)|r")
+    valorInfo:SetJustifyH("LEFT")
+    valorInfo:SetWidth(350)
+
+    -------------------------------------------------
     -- Characters Tab Content
     -------------------------------------------------
     local charactersContent = CreateFrame("Frame", nil, contentArea)
@@ -1062,7 +1440,7 @@ function addon:CreateSettingsPanel()
     scrollFrame:SetPoint("BOTTOMRIGHT", charactersContent, "BOTTOMRIGHT", -30, 50)
 
     local scrollChild = CreateFrame("Frame", nil, scrollFrame)
-    scrollChild:SetSize(340, 1)
+    scrollChild:SetSize(360, 1)
     scrollFrame:SetScrollChild(scrollChild)
     panel.charScrollChild = scrollChild
     panel.charRows = {}
@@ -1078,13 +1456,13 @@ function addon:CreateSettingsPanel()
     unbanAllBtn:SetPoint("BOTTOMRIGHT", charactersContent, "BOTTOMRIGHT", -15, 15)
     unbanAllBtn:SetText("Unban All")
     unbanAllBtn:SetScript("OnClick", function()
-        StaticPopup_Show("WBC_CONFIRM_UNBAN_ALL")
+        StaticPopup_Show("WT_CONFIRM_UNBAN_ALL")
     end)
     panel.unbanAllBtn = unbanAllBtn
 
     -- Start with general tab
-    panel.currentTab = TAB_GENERAL
-    SetTabSelected(tab1, true)
+    panel.currentTab = SETTINGS_TAB_GENERAL
+    SetSettingsTabSelected(tab1, true)
 
     panel:Hide()
     settingsPanel = panel
@@ -1092,7 +1470,7 @@ function addon:CreateSettingsPanel()
 end
 
 -- Static popup for unban all
-StaticPopupDialogs["WBC_CONFIRM_UNBAN_ALL"] = {
+StaticPopupDialogs["WT_CONFIRM_UNBAN_ALL"] = {
     text = "Unban all characters?\n\nThis will allow all previously banned characters to be tracked again.",
     button1 = "Yes",
     button2 = "No",
@@ -1127,7 +1505,7 @@ local function CreateCharacterSettingsRow(parent, index)
     -- Realm
     row.realmText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     row.realmText:SetPoint("LEFT", row.nameText, "RIGHT", 5, 0)
-    row.realmText:SetWidth(80)
+    row.realmText:SetWidth(100)
     row.realmText:SetJustifyH("LEFT")
     row.realmText:SetTextColor(0.6, 0.6, 0.6)
 
@@ -1202,7 +1580,7 @@ function addon:UpdateCharacterList()
             end)
 
             row.banBtn:SetScript("OnClick", function()
-                StaticPopup_Show("WBC_CONFIRM_BAN_SETTINGS", charData.fullName)
+                StaticPopup_Show("WT_CONFIRM_BAN_SETTINGS", charData.fullName)
             end)
 
             row:ClearAllPoints()
@@ -1224,7 +1602,7 @@ function addon:UpdateCharacterList()
 end
 
 -- Static popup for ban from settings
-StaticPopupDialogs["WBC_CONFIRM_BAN_SETTINGS"] = {
+StaticPopupDialogs["WT_CONFIRM_BAN_SETTINGS"] = {
     text = "Ban %s?\n\nThis character will be removed and won't be added again when you log in.",
     button1 = "Yes",
     button2 = "No",
@@ -1253,6 +1631,9 @@ function addon:UpdateSettingsPanel()
     for key, cb in pairs(settingsPanel.bossCheckboxes) do
         cb:SetChecked(opts.trackBosses[key])
     end
+
+    settingsPanel.cbTrackValor:SetChecked(opts.trackValor ~= false)
+    settingsPanel.cbNotCapped:SetChecked(opts.showNotCappedOnly)
 end
 
 function addon:ToggleSettingsPanel()

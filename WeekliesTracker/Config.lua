@@ -2,33 +2,38 @@ local addonName, addon = ...
 
 -- Print helper
 local function Print(msg)
-    print("|cff00ff00[WBC]|r " .. msg)
+    print("|cff00ff00[WT]|r " .. msg)
 end
 
 -- Print usage help
 local function PrintHelp()
-    Print("World Boss Checklist Commands:")
-    print("  |cffffcc00/wbc|r - Toggle the checklist window")
-    print("  |cffffcc00/wbc show|r - Show the window")
-    print("  |cffffcc00/wbc hide|r - Hide the window")
-    print("  |cffffcc00/wbc config|r - Show current settings")
-    print("  |cffffcc00/wbc reset|r - Reset window position")
-    print("  |cffffcc00/wbc scale <number>|r - Set UI scale (0.5-2.0)")
-    print("  |cffffcc00/wbc lock|r - Toggle frame lock")
-    print("  |cffffcc00/wbc unkilled|r - Toggle 'show unkilled only'")
-    print("  |cffffcc00/wbc level <number>|r - Set minimum level filter (0 to disable)")
-    print("  |cffffcc00/wbc boss <name>|r - Toggle tracking for a boss")
-    print("  |cffffcc00/wbc bosses|r - List all bosses and their status")
-    print("  |cffffcc00/wbc banned|r - List banned characters")
-    print("  |cffffcc00/wbc unban <name-realm>|r - Unban a character")
-    print("  |cffffcc00/wbc clear|r - Clear all character data")
+    Print("Weeklies Tracker Commands:")
+    print("  |cffffcc00/wt|r - Toggle the checklist window")
+    print("  |cffffcc00/wt show|r - Show the window")
+    print("  |cffffcc00/wt hide|r - Hide the window")
+    print("  |cffffcc00/wt bosses|r - Switch to Bosses tab")
+    print("  |cffffcc00/wt valor|r - Switch to Valor tab")
+    print("  |cffffcc00/wt config|r - Show current settings")
+    print("  |cffffcc00/wt reset|r - Reset window position")
+    print("  |cffffcc00/wt scale <number>|r - Set UI scale (0.5-2.0)")
+    print("  |cffffcc00/wt lock|r - Toggle frame lock")
+    print("  |cffffcc00/wt unkilled|r - Toggle 'show unkilled only'")
+    print("  |cffffcc00/wt notcapped|r - Toggle 'show not capped only'")
+    print("  |cffffcc00/wt level <number>|r - Set minimum level filter (0 to disable)")
+    print("  |cffffcc00/wt boss <name>|r - Toggle tracking for a boss")
+    print("  |cffffcc00/wt banned|r - List banned characters")
+    print("  |cffffcc00/wt unban <name-realm>|r - Unban a character")
+    print("  |cffffcc00/wt clear|r - Clear all character data")
+    print("  |cff888888Legacy commands: /wbc, /worldboss still work|r")
 end
 
 -- Print current config
 local function PrintConfig()
     local opts = addon.db.options
     Print("Current Settings:")
-    print("  Show Unkilled Only: " .. (opts.showUnkilledOnly and "|cff00ff00Yes|r" or "|cffff0000No|r"))
+    print("  Show Unkilled Only (Bosses): " .. (opts.showUnkilledOnly and "|cff00ff00Yes|r" or "|cffff0000No|r"))
+    print("  Show Not Capped Only (Valor): " .. (opts.showNotCappedOnly and "|cff00ff00Yes|r" or "|cffff0000No|r"))
+    print("  Track Valor: " .. (opts.trackValor ~= false and "|cff00ff00Yes|r" or "|cffff0000No|r"))
     print("  Level Requirement: " .. (opts.levelRequirement > 0 and opts.levelRequirement or "|cff888888Disabled|r"))
     print("  Frame Scale: " .. string.format("%.1f", opts.frameScale))
     print("  Frame Locked: " .. (opts.locked and "|cff00ff00Yes|r" or "|cffff0000No|r"))
@@ -48,7 +53,7 @@ local function PrintBosses()
         local note = boss.note and (" |cff888888(" .. boss.note .. ")|r") or ""
         print("  " .. status .. " " .. boss.name .. " - " .. boss.zone .. note)
     end
-    print("Use |cffffcc00/wbc boss <name>|r to toggle (e.g., /wbc boss sha)")
+    print("Use |cffffcc00/wt boss <name>|r to toggle (e.g., /wt boss sha)")
 end
 
 -- List banned characters
@@ -62,7 +67,7 @@ local function PrintBanned()
     if count == 0 then
         print("  |cff888888No banned characters|r")
     else
-        print("Use |cffffcc00/wbc unban <name-realm>|r to unban")
+        print("Use |cffffcc00/wt unban <name-realm>|r to unban")
     end
 end
 
@@ -124,8 +129,32 @@ local function UnbanCharacter(fullName)
     end
 end
 
+-- Print current valor status
+local function PrintValorStatus()
+    Print("Current Character Valor Status:")
+    local info = addon:GetCurrentCharacterInfo()
+    if addon.db.realms[info.realm] and addon.db.realms[info.realm][info.name] then
+        local charData = addon.db.realms[info.realm][info.name]
+        local valor = charData.valor or {}
+        local current = valor.current or 0
+        local earned = valor.earnedThisWeek or 0
+        local max = valor.weeklyMax or addon.VALOR_WEEKLY_CAP
+        print("  Current Valor: |cffffffff" .. current .. "|r")
+        print("  Weekly Progress: |cffffffff" .. earned .. "/" .. max .. "|r")
+        if earned >= max then
+            print("  Status: |cff00ff00Capped!|r")
+        elseif earned >= max * 0.5 then
+            print("  Status: |cffffff00" .. math.floor(earned / max * 100) .. "% complete|r")
+        else
+            print("  Status: |cffff8000" .. math.floor(earned / max * 100) .. "% complete|r")
+        end
+    else
+        print("  |cff888888No data available for current character|r")
+    end
+end
+
 -- Clear all data confirmation
-StaticPopupDialogs["WBC_CONFIRM_CLEAR"] = {
+StaticPopupDialogs["WT_CONFIRM_CLEAR"] = {
     text = "Clear ALL character data?\n\nThis cannot be undone!",
     button1 = "Yes, Clear All",
     button2 = "Cancel",
@@ -161,11 +190,31 @@ local function SlashHandler(msg)
     elseif cmd == "hide" then
         addon:HideUI()
 
+    elseif cmd == "bosses" or cmd == "boss" and not arg1 then
+        -- Switch to bosses tab
+        addon:ShowUI()
+        if addon.mainFrame and addon.mainFrame.SwitchMainTab then
+            addon.mainFrame.SwitchMainTab(1)  -- MAIN_TAB_BOSSES
+        end
+        if arg1 then
+            ToggleBoss(arg1)
+        end
+
+    elseif cmd == "valor" then
+        -- Switch to valor tab
+        addon:ShowUI()
+        if addon.mainFrame and addon.mainFrame.SwitchMainTab then
+            addon.mainFrame.SwitchMainTab(2)  -- MAIN_TAB_VALOR
+        end
+
+    elseif cmd == "valorstatus" then
+        PrintValorStatus()
+
     elseif cmd == "help" or cmd == "?" then
         PrintHelp()
 
     elseif cmd == "config" or cmd == "settings" or cmd == "options" then
-        PrintConfig()
+        addon:ToggleSettingsPanel()
 
     elseif cmd == "reset" then
         addon.db.options.framePosition = nil
@@ -184,7 +233,7 @@ local function SlashHandler(msg)
             end
             Print("Scale set to " .. string.format("%.1f", scale))
         else
-            Print("Usage: /wbc scale <0.5-2.0>")
+            Print("Usage: /wt scale <0.5-2.0>")
             Print("Current scale: " .. string.format("%.1f", addon.db.options.frameScale))
         end
 
@@ -195,6 +244,11 @@ local function SlashHandler(msg)
     elseif cmd == "unkilled" then
         addon.db.options.showUnkilledOnly = not addon.db.options.showUnkilledOnly
         Print("Show unkilled only: " .. (addon.db.options.showUnkilledOnly and "enabled" or "disabled"))
+        addon:UpdateUI()
+
+    elseif cmd == "notcapped" then
+        addon.db.options.showNotCappedOnly = not addon.db.options.showNotCappedOnly
+        Print("Show not capped only: " .. (addon.db.options.showNotCappedOnly and "enabled" or "disabled"))
         addon:UpdateUI()
 
     elseif cmd == "level" then
@@ -208,14 +262,14 @@ local function SlashHandler(msg)
             end
             addon:UpdateUI()
         else
-            Print("Usage: /wbc level <0-100> (0 to disable)")
+            Print("Usage: /wt level <0-100> (0 to disable)")
             Print("Current: " .. addon.db.options.levelRequirement)
         end
 
     elseif cmd == "boss" then
         ToggleBoss(arg1)
 
-    elseif cmd == "bosses" then
+    elseif cmd == "bosslist" then
         PrintBosses()
 
     elseif cmd == "banned" or cmd == "banlist" then
@@ -227,7 +281,7 @@ local function SlashHandler(msg)
         UnbanCharacter(fullName)
 
     elseif cmd == "clear" then
-        StaticPopup_Show("WBC_CONFIRM_CLEAR")
+        StaticPopup_Show("WT_CONFIRM_CLEAR")
 
     else
         Print("Unknown command: " .. cmd)
@@ -237,10 +291,17 @@ end
 
 -- Register slash commands
 function addon:RegisterSlashCommands()
+    -- New primary commands
+    SLASH_WEEKLIESTRACKER1 = "/wt"
+    SLASH_WEEKLIESTRACKER2 = "/weeklies"
+    SLASH_WEEKLIESTRACKER3 = "/weekliestracker"
+    SlashCmdList["WEEKLIESTRACKER"] = SlashHandler
+
+    -- Legacy commands (backward compatibility)
     SLASH_WORLDBOSSCHECKLIST1 = "/wbc"
     SLASH_WORLDBOSSCHECKLIST2 = "/worldboss"
     SLASH_WORLDBOSSCHECKLIST3 = "/worldbosschecklist"
     SlashCmdList["WORLDBOSSCHECKLIST"] = SlashHandler
 
-    Print("Loaded! Type |cffffcc00/wbc|r to toggle the window.")
+    Print("Loaded! Type |cffffcc00/wt|r to toggle the window.")
 end

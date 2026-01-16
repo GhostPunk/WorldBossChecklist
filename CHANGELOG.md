@@ -1,9 +1,36 @@
 # Changelog
 
-All notable changes to the World Boss Checklist addon will be documented in this file.
+All notable changes to the Weeklies Tracker addon will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [2.0.0] - 2026-01-16
+
+### Added
+- **Valor point tracking** - Track weekly valor progress across all characters
+- **Tabbed main window** - Switch between "Bosses" and "Valor" tabs
+- **Valor tab** - Shows character name, current valor, and weekly progress (x/1600)
+- **Color-coded valor progress** - Green (capped), Yellow (>=50%), Orange (<50%)
+- **Valor settings tab** - New settings tab for valor-specific options
+- **"Show Not Capped Only" filter** - Hide characters that have reached the weekly valor cap
+- **New slash commands** - `/wt`, `/weeklies`, `/weekliestracker`
+- **Valor slash commands** - `/wt valor` to switch to valor tab, `/wt notcapped` to toggle filter
+- **Minimap tooltip valor display** - Shows current character's valor progress on hover
+- **Titan Panel valor display** - Shows valor progress in button text
+- **Automatic data migration** - Migrates data from WorldBossChecklistDB to WeekliesTrackerDB
+
+### Changed
+- **Renamed addon** - From "World Boss Checklist" to "Weeklies Tracker"
+- **Renamed folder** - From `WorldBossChecklist` to `WeekliesTracker`
+- **New SavedVariables name** - Now uses `WeekliesTrackerDB` (migrates from old DB automatically)
+- **Settings panel** - Now has 4 tabs: General, Bosses, Valor, Characters
+- **Updated print prefix** - Now shows `[WT]` instead of `[WBC]`
+- **Frame names updated** - `WeekliesTrackerFrame`, `WeekliesTrackerMinimapButton`, etc.
+
+### Backward Compatibility
+- **Legacy slash commands work** - `/wbc`, `/worldboss`, `/worldbosschecklist` still function
+- **Data migration** - Old `WorldBossChecklistDB` data is automatically migrated on first load
 
 ## [1.1.0] - 2026-01-14
 
