@@ -32,23 +32,27 @@ local function MigrateDB()
     end
 end
 
--- Reset bad valor data from v2.0.0/v2.0.1
+-- Reset bad valor data from v2.0.0/v2.0.1/v2.0.2
 local function ResetBadValorData(db)
-    if db.valorDataReset then return end  -- Already done
+    -- Use version-specific flag so we can run new migrations
+    if db.valorDataResetV203 then return end  -- Already done
 
     -- Reset all characters' valor data to start fresh
     if db.realms then
         for realmName, characters in pairs(db.realms) do
             for charName, charData in pairs(characters) do
-                if charData.valor then
-                    charData.valor.earnedThisWeek = 0
-                    charData.valor.baselineSet = false  -- Will re-establish on next login
-                end
+                -- Reset valor to clean state
+                charData.valor = {
+                    current = 0,
+                    earnedThisWeek = 0,
+                    weeklyMax = addon.VALOR_WEEKLY_CAP,
+                    baselineSet = false,  -- Will re-establish on next login
+                }
             end
         end
     end
 
-    db.valorDataReset = true
+    db.valorDataResetV203 = true
 end
 
 -- Initialize database
@@ -365,7 +369,8 @@ function addon:UpdateCurrentCharacterValor()
     end
 
     -- Initialize valor table if needed
-    if not charData.valor then
+    if not charData.valor or not charData.valor.baselineSet then
+        -- New character or existing without baseline - initialize fresh
         charData.valor = {
             current = currentValor,
             earnedThisWeek = 0,  -- Start fresh, will accumulate as we track
@@ -373,12 +378,6 @@ function addon:UpdateCurrentCharacterValor()
             baselineSet = true,  -- Mark baseline as established
             lastUpdated = GetServerTime(),
         }
-    elseif not charData.valor.baselineSet then
-        -- Existing character without baseline - set it now
-        charData.valor.current = currentValor
-        charData.valor.baselineSet = true
-        charData.valor.weeklyMax = addon.VALOR_WEEKLY_CAP
-        charData.valor.lastUpdated = GetServerTime()
     else
         -- Update current valor but preserve earnedThisWeek (tracked manually)
         charData.valor.current = currentValor
@@ -408,7 +407,12 @@ function addon:UpdateCurrentCharacter()
             class = info.class,
             level = info.level,
             bosses = {},
-            valor = {},
+            valor = {
+                current = 0,
+                earnedThisWeek = 0,
+                weeklyMax = addon.VALOR_WEEKLY_CAP,
+                baselineSet = false,
+            },
         }
     end
 
@@ -514,7 +518,7 @@ function addon:ShouldShowCharacterValor(charData)
     if opts.showNotCappedOnly then
         local valor = charData.valor or {}
         local earned = valor.earnedThisWeek or 0
-        local max = valor.weeklyMax or addon.VALOR_WEEKLY_CAP
+        local max = (valor.weeklyMax and valor.weeklyMax > 0) and valor.weeklyMax or addon.VALOR_WEEKLY_CAP
         if earned >= max then
             return false
         end

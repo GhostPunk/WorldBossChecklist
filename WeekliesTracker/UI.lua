@@ -534,7 +534,8 @@ local function UpdateValorCharacterRow(row, charData)
     local valor = charData.valor or {}
     local current = valor.current or 0
     local earned = valor.earnedThisWeek or 0
-    local max = valor.weeklyMax or addon.VALOR_WEEKLY_CAP
+    -- Always use VALOR_WEEKLY_CAP if weeklyMax is nil or 0
+    local max = (valor.weeklyMax and valor.weeklyMax > 0) and valor.weeklyMax or addon.VALOR_WEEKLY_CAP
 
     -- Current valor
     row.currentText:SetText(tostring(current))
@@ -932,7 +933,7 @@ function addon:InitializeMinimapButton()
             local charData = addon.db.realms[info.realm][info.name]
             local valor = charData.valor or {}
             local earned = valor.earnedThisWeek or 0
-            local max = valor.weeklyMax or addon.VALOR_WEEKLY_CAP
+            local max = (valor.weeklyMax and valor.weeklyMax > 0) and valor.weeklyMax or addon.VALOR_WEEKLY_CAP
             local color = GetValorProgressColor(earned, max)
             GameTooltip:AddLine(string.format("Valor: |cff%02x%02x%02x%d/%d|r",
                 color[1] * 255, color[2] * 255, color[3] * 255, earned, max), 0.8, 0.8, 0.8)
@@ -1018,7 +1019,7 @@ function TitanPanelWeekliesTrackerButton_GetButtonText(id)
         local charData = addon.db.realms[info.realm][info.name]
         local v = charData.valor or {}
         valor = v.earnedThisWeek or 0
-        max = v.weeklyMax or addon.VALOR_WEEKLY_CAP
+        max = (v.weeklyMax and v.weeklyMax > 0) and v.weeklyMax or addon.VALOR_WEEKLY_CAP
     end
 
     return "WT", string.format("%d/%d", valor, max)
@@ -1038,7 +1039,7 @@ function TitanPanelWeekliesTrackerButton_GetTooltipText()
         local charData = addon.db.realms[info.realm][info.name]
         local valor = charData.valor or {}
         local earned = valor.earnedThisWeek or 0
-        local max = valor.weeklyMax or addon.VALOR_WEEKLY_CAP
+        local max = (valor.weeklyMax and valor.weeklyMax > 0) and valor.weeklyMax or addon.VALOR_WEEKLY_CAP
         local color = GetValorProgressColor(earned, max)
         table.insert(lines, string.format("|cffffffffValor:|r |cff%02x%02x%02x%d/%d|r",
             color[1] * 255, color[2] * 255, color[3] * 255, earned, max))
