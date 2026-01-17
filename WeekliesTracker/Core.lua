@@ -32,6 +32,25 @@ local function MigrateDB()
     end
 end
 
+-- Reset bad valor data from v2.0.0/v2.0.1
+local function ResetBadValorData(db)
+    if db.valorDataReset then return end  -- Already done
+
+    -- Reset all characters' valor data to start fresh
+    if db.realms then
+        for realmName, characters in pairs(db.realms) do
+            for charName, charData in pairs(characters) do
+                if charData.valor then
+                    charData.valor.earnedThisWeek = 0
+                    charData.valor.baselineSet = false  -- Will re-establish on next login
+                end
+            end
+        end
+    end
+
+    db.valorDataReset = true
+end
+
 -- Initialize database
 local function InitializeDB()
     -- Migrate from old DB if needed
@@ -52,6 +71,9 @@ local function InitializeDB()
     if not db.banned then
         db.banned = {}
     end
+
+    -- Reset bad valor data from earlier versions
+    ResetBadValorData(db)
 
     -- Initialize options with defaults
     if not db.options then
@@ -164,24 +186,38 @@ function addon:TrackValorChange()
 
     local charData = self.db.realms[info.realm][info.name]
     if not charData.valor then
-        charData.valor = { current = 0, earnedThisWeek = 0, weeklyMax = addon.VALOR_WEEKLY_CAP }
+        charData.valor = {
+            current = 0,
+            earnedThisWeek = 0,
+            weeklyMax = addon.VALOR_WEEKLY_CAP,
+            baselineSet = false,  -- Track if we've established a baseline
+        }
     end
 
     -- Get current valor from API
     local currentValor = 0
     if C_CurrencyInfo and C_CurrencyInfo.GetCurrencyInfo then
-        local info = C_CurrencyInfo.GetCurrencyInfo(addon.VALOR_CURRENCY_ID)
-        if info then
-            currentValor = info.quantity or 0
+        local currInfo = C_CurrencyInfo.GetCurrencyInfo(addon.VALOR_CURRENCY_ID)
+        if currInfo then
+            currentValor = currInfo.quantity or 0
         end
     elseif GetCurrencyInfo then
         local _, amount = GetCurrencyInfo(addon.VALOR_CURRENCY_ID)
         currentValor = amount or 0
     end
 
+    -- If baseline not set, just record current valor (don't count as gained)
+    if not charData.valor.baselineSet then
+        charData.valor.current = currentValor
+        charData.valor.baselineSet = true
+        charData.valor.weeklyMax = addon.VALOR_WEEKLY_CAP
+        charData.valor.lastUpdated = GetServerTime()
+        return
+    end
+
     local previousValor = charData.valor.current or 0
 
-    -- If valor increased, add the difference to weekly earned
+    -- Only track gains AFTER baseline is established
     if currentValor > previousValor then
         local gained = currentValor - previousValor
         charData.valor.earnedThisWeek = (charData.valor.earnedThisWeek or 0) + gained
@@ -237,12 +273,13 @@ function addon:ResetAllBossKills()
     end
 end
 
--- Reset all valor earnedThisWeek for all characters
+-- Reset all valor earnedThisWeek for all characters (on weekly reset)
 function addon:ResetAllValor()
     for realmName, characters in pairs(self.db.realms) do
         for charName, charData in pairs(characters) do
             if charData.valor then
                 charData.valor.earnedThisWeek = 0
+                charData.valor.baselineSet = false  -- Re-establish baseline after reset
             end
         end
     end
@@ -333,8 +370,15 @@ function addon:UpdateCurrentCharacterValor()
             current = currentValor,
             earnedThisWeek = 0,  -- Start fresh, will accumulate as we track
             weeklyMax = addon.VALOR_WEEKLY_CAP,
+            baselineSet = true,  -- Mark baseline as established
             lastUpdated = GetServerTime(),
         }
+    elseif not charData.valor.baselineSet then
+        -- Existing character without baseline - set it now
+        charData.valor.current = currentValor
+        charData.valor.baselineSet = true
+        charData.valor.weeklyMax = addon.VALOR_WEEKLY_CAP
+        charData.valor.lastUpdated = GetServerTime()
     else
         -- Update current valor but preserve earnedThisWeek (tracked manually)
         charData.valor.current = currentValor

@@ -5,6 +5,21 @@ All notable changes to the Weeklies Tracker addon will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.2] - 2026-01-17
+
+### Fixed
+- **Valor tracking baseline** - Added `baselineSet` flag to prevent counting existing valor as weekly earned
+- **Migration reset** - Automatically resets bad valor data from v2.0.0/v2.0.1 on first load
+- **New character valor** - New characters now correctly start at 0/1600 instead of showing total valor as weekly earned
+- **Old character valor** - Characters with incorrect data (e.g., 169000/0) are reset and re-baselined on login
+
+## [2.0.1] - 2026-01-16
+
+### Fixed
+- **Valor API handling** - MoP Classic API doesn't provide accurate weekly data; now tracks valor gains manually
+- **Weekly cap display** - Fixed weekly max showing 0, now defaults to 1600 when API returns invalid data
+- **Window size consistency** - Fixed window width changing between Bosses and Valor tabs
+
 ## [2.0.0] - 2026-01-16
 
 ### Added
