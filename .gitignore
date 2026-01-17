@@ -3,6 +3,7 @@
 
 # Source/reference files (not part of the addon)
 weakaura.json
+wa-valor.json
 *.png
 *.jpg
 *.jpeg
