@@ -5,6 +5,21 @@ All notable changes to the Weeklies Tracker addon will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.6] - 2026-01-17
+
+### Fixed
+- **Complete rewrite using totalEarned** - Now uses `currInfo.totalEarned` (lifetime earned) instead of `quantity` (current balance)
+- **Much simpler algorithm** - Based on working WeakAura by Farsigt
+- **No more delta tracking bugs** - `totalEarned` never decreases, so we just store "week start" value and subtract
+
+### How It Works Now (like the WeakAura)
+1. API provides `totalEarned` = lifetime valor earned (never decreases, even when spent)
+2. On first login this week, store `weekStartTotal = totalEarned`
+3. `earnedThisWeek = totalEarned - weekStartTotal`
+4. Weekly reset → clear `weekStartTotal` (will be re-set on next login)
+
+This is the same approach used by Farsigt's "[Weekly VP earned]" WeakAura which works correctly.
+
 ## [2.0.5] - 2026-01-17
 
 ### Fixed

@@ -1,0 +1,190 @@
+{
+  "d": {
+    "actions": {
+      "finish": [],
+      "init": {
+        "custom": "",
+        "do_custom": false,
+        "do_custom_load": false
+      },
+      "start": {
+        "custom": "",
+        "do_custom": false
+      }
+    },
+    "anchorFrameFrame": "PaperDollFrame",
+    "anchorFrameType": "SELECTFRAME",
+    "anchorPoint": "TOPRIGHT",
+    "animation": {
+      "finish": {
+        "duration_type": "seconds",
+        "easeStrength": 3,
+        "easeType": "none",
+        "type": "none"
+      },
+      "main": {
+        "duration_type": "seconds",
+        "easeStrength": 3,
+        "easeType": "none",
+        "type": "none"
+      },
+      "start": {
+        "duration_type": "seconds",
+        "easeStrength": 3,
+        "easeType": "none",
+        "type": "none"
+      }
+    },
+    "authorOptions": [
+      {
+        "default": true,
+        "desc": "Display weekly VP for all characters instead of only the current one.",
+        "key": "showAllChars",
+        "name": "Show all characters",
+        "type": "toggle",
+        "useDesc": true,
+        "width": 2
+      },
+      {
+        "default": true,
+        "desc": "When enabled, only show characters from your current realm.",
+        "key": "onlyThisRealm",
+        "name": "Only show this realm",
+        "type": "toggle",
+        "useDesc": true,
+        "width": 2
+      }
+    ],
+    "automaticWidth": "Auto",
+    "color": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "conditions": [],
+    "config": {
+      "onlyThisRealm": true,
+      "showAllChars": true
+    },
+    "customText": "function()\n    -- Localize common functions\n    local floor, format, insert, sort, concat, pairs, ipairs =\n    math.floor, string.format, table.insert, table.sort, table.concat, pairs, ipairs\n    \n    -- Configuration and stored values\n    local goal      = aura_env.goal or 1600\n    local showAll   = aura_env.config and aura_env.config.showAllChars\n    local onlyRealm = aura_env.config and aura_env.config.onlyThisRealm\n    local thisRealm = aura_env.currentRealm or GetRealmName() or \"Unknown\"\n    local saved     = aura_env.saved or {}\n    local lines     = {}\n    \n    -- Check if Valor of the Ancients is active\n    local hasValor = AuraUtil.FindAuraByName(\"Valor of the Ancients\", \"player\")\n    if hasValor then\n        insert(lines, \"|cFF00FF00Valor of the Ancients active!|r\\n\")\n    end\n    \n    -- Helper: percentage-of function\n    local function pctOf(e, g)\n        return floor(((e or 0) / (g > 0 and g or 1)) * 100 + 0.5)\n    end\n    \n    -- MULTI-CHARACTER MODE\n    if showAll then\n        insert(lines, \"|cFFFFFFFFWeekly VP Earned (All Chars):|r\")\n        \n        local list = {}\n        for _, r in pairs(saved) do\n            if type(r) == \"table\"\n            and r.earned and r.earned > 0\n            and (not r.weekStamp or r.weekStamp >= (aura_env.weekStamp or 0))\n            then\n                if (not onlyRealm) or (r.realm == thisRealm) then\n                    insert(list, {\n                            name   = r.name,\n                            realm  = r.realm,\n                            earned = r.earned,\n                            pct    = pctOf(r.earned, goal),\n                    })\n                end\n            end\n        end\n        \n        sort(list, function(a, b) return (a.pct or 0) > (b.pct or 0) end)\n        \n        if #list == 0 then\n            insert(lines, \"No characters with VP earned this week.\")\n        else\n            for _, r in ipairs(list) do\n                local label = r.name or \"Unknown\"\n                if r.realm ~= thisRealm then\n                    label = label .. \"-\" .. (r.realm or \"?\")\n                end\n                \n                -- Determine color based on % of goal\n                local color\n                if r.pct >= 100 then\n                    color = \"|cFF00FF00\"   -- green over 100%\n                elseif r.pct >= 75 then\n                    color = \"|cFFADFF2F\"   -- yellow-green 75-99%\n                elseif r.pct >= 50 then\n                    color = \"|cFFFFFF00\"   -- yellow 50-74%\n                elseif r.pct >= 25 then\n                    color = \"|cFFFFA500\"   -- orange 25-49%\n                else\n                    color = \"|cFFFF0000\"   -- red 0-24%\n                end\n                \n                -- Add marker for the currently logged-in character\n                local isCurrent = (r.name == UnitName(\"player\")) and (r.realm == thisRealm)\n                local marker = isCurrent and \"> \" or \"\"\n                \n                -- Add formatted line with color and reset at end\n                insert(lines, format(\"%s%s%s: %d / %d (%d%%)|r\", color, marker, label, r.earned or 0, goal, r.pct or 0))\n            end\n            \n        end\n        \n    else\n        local e = aura_env.earned or 0\n        local p = pctOf(e, goal)\n        insert(lines, \"|cFFFFFFFFWeekly VP Earned:|r\")\n        insert(lines, format(\"%d / %d (%d%%)\", e, goal, p))\n    end\n    \n    return concat(lines, \"\\n\")\nend",
+    "customTextUpdate": "update",
+    "customTextUpdateThrottle": 1,
+    "desc": "This WA helps you keep track of how close you are to getting the 50% valor buff in MoP Classic (Valor of the Ancients). \n\nFeatures:\n- Tracks VP earned this week (not current VP balance).\n- Ignores spending, only counts earned VP.\n- Auto-reset each week based on region.\n- Always visible when opening character sheet.\n- Instant updates when gaining VP.\n- Persists through relog & reload.\n- Sorts by VP gained.\n- Tags currently logged on char with a \">\"\n- Adds \"Valor of the Ancients active!\" text when the buff is active, regardless of what the WA has tracked.\n- Updates color of the text on each char based on VP gained:\n0-24% = red\n25-49% = orange\n50-74% = yellow\n75-99% = yellow-green\n100%+ = green\n\nImportant notes:\nCan't track VP gained before the WA was installed.\nDeleting the WA and installing it again wipes the data.\n\n-- Farsigt, Norushen EU.",
+    "displayText": "%c\n",
+    "displayText_format_c_format": "none",
+    "displayText_format_p_format": "timed",
+    "displayText_format_p_time_dynamic_threshold": 60,
+    "displayText_format_p_time_format": 0,
+    "displayText_format_p_time_legacy_floor": false,
+    "displayText_format_p_time_mod_rate": true,
+    "displayText_format_p_time_precision": 1,
+    "fixedWidth": 200,
+    "font": "PT Sans Narrow",
+    "fontSize": 14,
+    "frameStrata": 1,
+    "id": "[Farsigt] Weekly VP earned",
+    "information": [],
+    "internalVersion": 87,
+    "justify": "LEFT",
+    "load": {
+      "class": {
+        "multi": []
+      },
+      "instance_type": {
+        "multi": []
+      },
+      "size": {
+        "multi": []
+      },
+      "spec": {
+        "multi": []
+      },
+      "talent": {
+        "multi": []
+      },
+      "use_never": false
+    },
+    "outline": "OUTLINE",
+    "regionType": "text",
+    "selfPoint": "TOPLEFT",
+    "semver": "2.0.9",
+    "shadowColor": [
+      0,
+      0,
+      0,
+      1
+    ],
+    "shadowXOffset": 1,
+    "shadowYOffset": -1,
+    "subRegions": [
+      {
+        "type": "subbackground"
+      }
+    ],
+    "tocversion": 50502,
+    "triggers": {
+      "1": {
+        "trigger": {
+          "check": "event",
+          "custom": "function(event, arg1)\n    if event == \"CURRENCY_DISPLAY_UPDATE\" and arg1 ~= 396 then\n        return false\n    end\n\n    local info = C_CurrencyInfo.GetCurrencyInfo(396)\n    local total = info and info.totalEarned or 0\n\n    aura_env.saved = aura_env.saved or {}\n    local name, realm = UnitFullName(\"player\")\n    realm = realm or GetRealmName() or \"Unknown\"\n    local key = name .. \"-\" .. realm\n\n    local rec = aura_env.saved[key]\n    if not rec then\n        rec = { name = name, realm = realm, weekStart = 0, weekStamp = 0, earned = 0 }\n        aura_env.saved[key] = rec\n    end\n\n    local regionID = GetCurrentRegion and GetCurrentRegion() or 1\n    local resetWday = (regionID == 1) and 3 or 4\n    local now = GetServerTime()\n    local t = date(\"*t\", now)\n    local daysBack = (t.wday - resetWday + 7) % 7\n    t.hour, t.min, t.sec = 5, 0, 0\n    local week = time(t) - daysBack * 86400\n\n    if rec.weekStamp < week then\n        rec.weekStart = total\n        rec.weekStamp = week\n    elseif rec.weekStart == nil then\n        rec.weekStart = total\n    end\n\n    local earned = total - rec.weekStart\n    if earned < 0 then earned = 0 end\n    rec.earned = earned\n\n    aura_env.earned       = earned\n    aura_env.goal         = 1600\n    aura_env.currentRealm = realm\n    aura_env.weekStamp    = week\n\n    -- tell WA “something changed” without staying permanently active\n    WeakAuras.ScanEvents(\"FARSIGT_VP_UPDATE\", earned)\n    return false\nend\n",
+          "custom_hide": "timed",
+          "custom_type": "event",
+          "debuffType": "HELPFUL",
+          "event": "Health",
+          "events": "PLAYER_LOGIN PLAYER_ENTERING_WORLD VARIABLES_LOADED CURRENCY_DISPLAY_UPDATE CHAT_MSG_LOOT",
+          "names": [],
+          "spellIds": [],
+          "subeventPrefix": "SPELL",
+          "subeventSuffix": "_CAST_START",
+          "type": "custom",
+          "unit": "player",
+          "use_absorbHealMode": true,
+          "use_absorbMode": true,
+          "use_unit": true
+        },
+        "untrigger": []
+      },
+      "2": {
+        "trigger": {
+          "custom": "function(event, earned)\n    return true\nend\n",
+          "custom_hide": "timed",
+          "custom_type": "event",
+          "debuffType": "HELPFUL",
+          "event": "Chat Message",
+          "events": "FARSIGT_VP_UPDATE",
+          "type": "custom",
+          "unit": "player"
+        },
+        "untrigger": []
+      },
+      "3": {
+        "trigger": {
+          "debuffType": "HELPFUL",
+          "event": "Conditions",
+          "type": "unit",
+          "unit": "player",
+          "use_absorbHealMode": true,
+          "use_absorbMode": true,
+          "use_alwaystrue": true,
+          "use_unit": true
+        },
+        "untrigger": []
+      },
+      "activeTriggerMode": -10,
+      "customTriggerLogic": "",
+      "disjunctive": "any"
+    },
+    "uid": "LZB0P57fAKg",
+    "url": "https://wago.io/VNBmFPY-7/14",
+    "version": 14,
+    "wagoID": "VNBmFPY-7",
+    "wordWrap": "WordWrap",
+    "xOffset": 0,
+    "yOffset": 0
+  },
+  "m": "d",
+  "s": "5.20.6",
+  "v": 1421,
+  "wagoID": "VNBmFPY-7"
+}
