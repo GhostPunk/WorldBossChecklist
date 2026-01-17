@@ -48,10 +48,14 @@ A World of Warcraft addon for **Classic Mists of Pandaria (5.5.3)** that tracks 
 
 If you're upgrading from the previous "World Boss Checklist" addon:
 
-1. **Remove the old folder**: Delete `Interface/AddOns/WorldBossChecklist/`
-2. **Install the new addon**: Copy the new `WeekliesTracker` folder
-3. **Your data will migrate automatically**: On first login, your character data will be migrated from `WorldBossChecklistDB` to `WeekliesTrackerDB`
+**Important**: Install the new addon BEFORE deleting the old one for automatic migration!
+
+1. **Install the new addon first**: Copy `WeekliesTracker` to your AddOns folder (keep the old `WorldBossChecklist` folder)
+2. **Log in once**: This triggers data migration from `WorldBossChecklistDB` to `WeekliesTrackerDB`
+3. **Then remove the old folder**: Delete `Interface/AddOns/WorldBossChecklist/`
 4. **Legacy commands still work**: `/wbc` and `/worldboss` will continue to function
+
+*Note: If you already deleted the old addon folder before installing the new one, the migration won't work (WoW only loads SavedVariables for installed addons). Your old data still exists in `WTF/.../WorldBossChecklist.lua` but would need manual copying.*
 
 ### Folder Structure
 
