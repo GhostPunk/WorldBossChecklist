@@ -465,9 +465,7 @@ local function UpdateBossHeaders(headers)
         xOffset = xOffset + BOSS_COLUMN_WIDTH
     end
 
-    -- Update frame width based on enabled bosses
-    local totalWidth = NAME_COLUMN_WIDTH + 20 + (#enabledBosses * BOSS_COLUMN_WIDTH) + 20
-    mainFrame:SetWidth(math.max(totalWidth, 350))
+    -- Don't change width here - handled in UpdateUI for consistency
 end
 
 -- Update a character row with boss data
@@ -723,9 +721,7 @@ local function UpdateValorContent()
         row:Hide()
     end
 
-    -- Set fixed width for valor display
-    local totalWidth = NAME_COLUMN_WIDTH + 20 + VALOR_COLUMN_WIDTH + PROGRESS_COLUMN_WIDTH + 20
-    mainFrame:SetWidth(math.max(totalWidth, 350))
+    -- Width handled in UpdateUI for consistency
 
     local allCharacters = addon:GetAllCharacters()
     local yOffset = 0
@@ -784,6 +780,14 @@ local function UpdateValorContent()
     return totalHeight
 end
 
+-- Calculate consistent frame width (uses max of both tabs)
+local function CalculateFrameWidth()
+    local enabledBosses = addon:GetEnabledBosses()
+    local bossWidth = NAME_COLUMN_WIDTH + 20 + (#enabledBosses * BOSS_COLUMN_WIDTH) + 20
+    local valorWidth = NAME_COLUMN_WIDTH + 20 + VALOR_COLUMN_WIDTH + PROGRESS_COLUMN_WIDTH + 20
+    return math.max(bossWidth, valorWidth, 400)
+end
+
 -- Update the UI
 function addon:UpdateUI()
     if not mainFrame or not mainFrame:IsShown() then return end
@@ -796,6 +800,9 @@ function addon:UpdateUI()
     else
         totalHeight = UpdateValorContent()
     end
+
+    -- Set consistent width for both tabs
+    mainFrame:SetWidth(CalculateFrameWidth())
 
     -- Update frame height
     local frameHeight = HEADER_HEIGHT + TAB_HEIGHT + ROW_HEIGHT + totalHeight + 14

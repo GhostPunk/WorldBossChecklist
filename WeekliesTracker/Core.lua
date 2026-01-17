@@ -93,41 +93,104 @@ end
 
 -- Get valor point information from the currency API
 function addon:GetValorInfo()
-    local currencyInfo = nil
+    local current = 0
+    local earnedThisWeek = 0
+    local weeklyMax = 0
+    local totalMax = 3000
 
-    -- Try modern C_CurrencyInfo API first
+    -- Try C_CurrencyInfo API (MoP Classic uses this)
     if C_CurrencyInfo and C_CurrencyInfo.GetCurrencyInfo then
-        currencyInfo = C_CurrencyInfo.GetCurrencyInfo(addon.VALOR_CURRENCY_ID)
-        if currencyInfo then
-            return {
-                current = currencyInfo.quantity or 0,
-                earnedThisWeek = currencyInfo.quantityEarnedThisWeek or 0,
-                weeklyMax = currencyInfo.maxWeeklyQuantity or addon.VALOR_WEEKLY_CAP,
-                totalMax = currencyInfo.maxQuantity or 3000,
-            }
+        local info = C_CurrencyInfo.GetCurrencyInfo(addon.VALOR_CURRENCY_ID)
+        if info then
+            current = info.quantity or 0
+            -- In MoP Classic, weekly tracking fields may vary
+            -- Try different possible field names
+            earnedThisWeek = info.quantityEarnedThisWeek or info.totalEarnedThisWeek or 0
+            weeklyMax = info.maxWeeklyQuantity or info.weeklyMax or 0
+            totalMax = info.maxQuantity or info.totalMax or 3000
         end
     end
 
-    -- Fallback to older GetCurrencyInfo API
-    if GetCurrencyInfo then
-        local name, current, texture, earnedThisWeek, weeklyMax, totalMax, isDiscovered = GetCurrencyInfo(addon.VALOR_CURRENCY_ID)
-        if name then
-            return {
-                current = current or 0,
-                earnedThisWeek = earnedThisWeek or 0,
-                weeklyMax = weeklyMax or addon.VALOR_WEEKLY_CAP,
-                totalMax = totalMax or 3000,
-            }
+    -- Fallback to older GetCurrencyInfo API if C_CurrencyInfo didn't work
+    if current == 0 and GetCurrencyInfo then
+        local name, amount, texture, week, wmax, tmax, isDiscovered = GetCurrencyInfo(addon.VALOR_CURRENCY_ID)
+        if name and amount then
+            current = amount
+            earnedThisWeek = week or 0
+            weeklyMax = wmax or 0
+            totalMax = tmax or 3000
         end
     end
 
-    -- Return defaults if API fails
+    -- Always use fallback cap if API returns 0
+    if weeklyMax == 0 or weeklyMax == nil then
+        weeklyMax = addon.VALOR_WEEKLY_CAP
+    end
+
+    -- If earnedThisWeek seems unreasonably high (>weekly cap), it's probably wrong data
+    -- In this case, we'll need to track it ourselves
+    if earnedThisWeek > weeklyMax then
+        -- The API might be returning lifetime earned or something else
+        -- Use stored value if we have one, otherwise start fresh
+        earnedThisWeek = self:GetStoredWeeklyValor() or 0
+    end
+
     return {
-        current = 0,
-        earnedThisWeek = 0,
-        weeklyMax = addon.VALOR_WEEKLY_CAP,
-        totalMax = 3000,
+        current = current,
+        earnedThisWeek = earnedThisWeek,
+        weeklyMax = weeklyMax,
+        totalMax = totalMax,
     }
+end
+
+-- Get stored weekly valor for current character (for manual tracking)
+function addon:GetStoredWeeklyValor()
+    local info = self:GetCurrentCharacterInfo()
+    if self.db.realms[info.realm] and self.db.realms[info.realm][info.name] then
+        local charData = self.db.realms[info.realm][info.name]
+        if charData.valor then
+            return charData.valor.earnedThisWeek
+        end
+    end
+    return nil
+end
+
+-- Track valor changes manually (called when currency updates)
+function addon:TrackValorChange()
+    local info = self:GetCurrentCharacterInfo()
+    if self:IsCharacterBanned(info.fullName) then return end
+    if not self.db.realms[info.realm] then return end
+    if not self.db.realms[info.realm][info.name] then return end
+
+    local charData = self.db.realms[info.realm][info.name]
+    if not charData.valor then
+        charData.valor = { current = 0, earnedThisWeek = 0, weeklyMax = addon.VALOR_WEEKLY_CAP }
+    end
+
+    -- Get current valor from API
+    local currentValor = 0
+    if C_CurrencyInfo and C_CurrencyInfo.GetCurrencyInfo then
+        local info = C_CurrencyInfo.GetCurrencyInfo(addon.VALOR_CURRENCY_ID)
+        if info then
+            currentValor = info.quantity or 0
+        end
+    elseif GetCurrencyInfo then
+        local _, amount = GetCurrencyInfo(addon.VALOR_CURRENCY_ID)
+        currentValor = amount or 0
+    end
+
+    local previousValor = charData.valor.current or 0
+
+    -- If valor increased, add the difference to weekly earned
+    if currentValor > previousValor then
+        local gained = currentValor - previousValor
+        charData.valor.earnedThisWeek = (charData.valor.earnedThisWeek or 0) + gained
+    end
+
+    -- Update current valor
+    charData.valor.current = currentValor
+    charData.valor.weeklyMax = addon.VALOR_WEEKLY_CAP
+    charData.valor.lastUpdated = GetServerTime()
 end
 
 -- Get the next weekly reset time
@@ -237,7 +300,7 @@ function addon:DeleteCharacter(fullName)
     end
 end
 
--- Update current character's valor data
+-- Update current character's valor data (initial load only)
 function addon:UpdateCurrentCharacterValor()
     local info = self:GetCurrentCharacterInfo()
 
@@ -251,17 +314,33 @@ function addon:UpdateCurrentCharacterValor()
     if not self.db.realms[info.realm][info.name] then return end
 
     local charData = self.db.realms[info.realm][info.name]
-    local valorInfo = self:GetValorInfo()
+
+    -- Get current valor from API
+    local currentValor = 0
+    if C_CurrencyInfo and C_CurrencyInfo.GetCurrencyInfo then
+        local currInfo = C_CurrencyInfo.GetCurrencyInfo(addon.VALOR_CURRENCY_ID)
+        if currInfo then
+            currentValor = currInfo.quantity or 0
+        end
+    elseif GetCurrencyInfo then
+        local _, amount = GetCurrencyInfo(addon.VALOR_CURRENCY_ID)
+        currentValor = amount or 0
+    end
 
     -- Initialize valor table if needed
     if not charData.valor then
-        charData.valor = {}
+        charData.valor = {
+            current = currentValor,
+            earnedThisWeek = 0,  -- Start fresh, will accumulate as we track
+            weeklyMax = addon.VALOR_WEEKLY_CAP,
+            lastUpdated = GetServerTime(),
+        }
+    else
+        -- Update current valor but preserve earnedThisWeek (tracked manually)
+        charData.valor.current = currentValor
+        charData.valor.weeklyMax = addon.VALOR_WEEKLY_CAP
+        charData.valor.lastUpdated = GetServerTime()
     end
-
-    charData.valor.current = valorInfo.current
-    charData.valor.earnedThisWeek = valorInfo.earnedThisWeek
-    charData.valor.weeklyMax = valorInfo.weeklyMax
-    charData.valor.lastUpdated = GetServerTime()
 end
 
 -- Update current character's data
@@ -448,8 +527,8 @@ frame:SetScript("OnEvent", function(self, event, ...)
         end
 
     elseif event == "CURRENCY_DISPLAY_UPDATE" then
-        -- Valor points may have changed
-        addon:UpdateCurrentCharacterValor()
+        -- Valor points may have changed - use manual tracking
+        addon:TrackValorChange()
         if addon.UpdateUI then
             addon:UpdateUI()
         end
