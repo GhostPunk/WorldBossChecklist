@@ -35,24 +35,25 @@ end
 -- Reset bad valor data from previous versions
 local function ResetBadValorData(db)
     -- Use version-specific flag so we can run new migrations
-    if db.valorDataResetV204 then return end  -- Already done
+    if db.valorDataResetV205 then return end  -- Already done
 
     -- Reset all characters' valor data to start fresh
     if db.realms then
         for realmName, characters in pairs(db.realms) do
             for charName, charData in pairs(characters) do
                 -- Reset valor to clean state
+                -- lastTrackedValor = nil means TrackValorChange will set baseline on first call
                 charData.valor = {
                     current = 0,
                     earnedThisWeek = 0,
                     weeklyMax = addon.VALOR_WEEKLY_CAP,
-                    baselineSet = false,  -- Will re-establish on next login
+                    lastTrackedValor = nil,  -- Will be set on first CURRENCY_DISPLAY_UPDATE
                 }
             end
         end
     end
 
-    db.valorDataResetV204 = true
+    db.valorDataResetV205 = true
 end
 
 -- Initialize database
@@ -182,7 +183,7 @@ function addon:GetStoredWeeklyValor()
 end
 
 -- Track valor changes manually (called when currency updates)
--- This function ONLY tracks deltas - baseline is set by UpdateCurrentCharacterValor()
+-- This is the ONLY function that modifies earnedThisWeek
 function addon:TrackValorChange()
     local info = self:GetCurrentCharacterInfo()
     if self:IsCharacterBanned(info.fullName) then return end
@@ -191,10 +192,12 @@ function addon:TrackValorChange()
 
     local charData = self.db.realms[info.realm][info.name]
 
-    -- If valor not initialized or baseline not set, do nothing
-    -- UpdateCurrentCharacterValor() will handle initialization
-    if not charData.valor or not charData.valor.baselineSet then
-        return
+    -- Ensure valor table exists
+    if not charData.valor then
+        charData.valor = {
+            earnedThisWeek = 0,
+            weeklyMax = addon.VALOR_WEEKLY_CAP,
+        }
     end
 
     -- Get current valor from API
@@ -209,18 +212,29 @@ function addon:TrackValorChange()
         currentValor = amount or 0
     end
 
-    local previousValor = charData.valor.current or 0
+    -- Update display value
+    charData.valor.current = currentValor
+    charData.valor.weeklyMax = addon.VALOR_WEEKLY_CAP
 
-    -- Only track GAINS (delta) - this is the key logic
-    -- If current > previous, player earned valor since last check
+    -- lastTrackedValor is the baseline for delta calculations
+    -- It's ONLY set here, not by login functions
+    if not charData.valor.lastTrackedValor then
+        -- First time tracking this character - set baseline, don't count as earned
+        charData.valor.lastTrackedValor = currentValor
+        return
+    end
+
+    -- Calculate delta since last tracking
+    local previousValor = charData.valor.lastTrackedValor
+
     if currentValor > previousValor then
+        -- Player earned valor since last check
         local gained = currentValor - previousValor
         charData.valor.earnedThisWeek = (charData.valor.earnedThisWeek or 0) + gained
     end
 
-    -- Always update current valor to track for next delta
-    charData.valor.current = currentValor
-    charData.valor.lastUpdated = GetServerTime()
+    -- Update baseline for next delta calculation
+    charData.valor.lastTrackedValor = currentValor
 end
 
 -- Get the next weekly reset time
@@ -273,7 +287,7 @@ function addon:ResetAllValor()
         for charName, charData in pairs(characters) do
             if charData.valor then
                 charData.valor.earnedThisWeek = 0
-                charData.valor.baselineSet = false  -- Re-establish baseline after reset
+                charData.valor.lastTrackedValor = nil  -- Will re-establish on next CURRENCY_DISPLAY_UPDATE
             end
         end
     end
@@ -331,7 +345,8 @@ function addon:DeleteCharacter(fullName)
     end
 end
 
--- Update current character's valor data (initial load only)
+-- Update current character's valor data
+-- This just ensures the valor table exists - actual tracking is done by TrackValorChange()
 function addon:UpdateCurrentCharacterValor()
     local info = self:GetCurrentCharacterInfo()
 
@@ -346,34 +361,19 @@ function addon:UpdateCurrentCharacterValor()
 
     local charData = self.db.realms[info.realm][info.name]
 
-    -- Get current valor from API
-    local currentValor = 0
-    if C_CurrencyInfo and C_CurrencyInfo.GetCurrencyInfo then
-        local currInfo = C_CurrencyInfo.GetCurrencyInfo(addon.VALOR_CURRENCY_ID)
-        if currInfo then
-            currentValor = currInfo.quantity or 0
-        end
-    elseif GetCurrencyInfo then
-        local _, amount = GetCurrencyInfo(addon.VALOR_CURRENCY_ID)
-        currentValor = amount or 0
+    -- Initialize valor table if it doesn't exist
+    -- Don't touch earnedThisWeek or lastTrackedValor - TrackValorChange() handles those
+    if not charData.valor then
+        charData.valor = {
+            current = 0,
+            earnedThisWeek = 0,
+            weeklyMax = addon.VALOR_WEEKLY_CAP,
+            lastTrackedValor = nil,  -- Will be set by TrackValorChange()
+        }
     end
 
-    -- Initialize valor table if needed
-    if not charData.valor or not charData.valor.baselineSet then
-        -- New character or existing without baseline - initialize fresh
-        charData.valor = {
-            current = currentValor,
-            earnedThisWeek = 0,  -- Start fresh, will accumulate as we track
-            weeklyMax = addon.VALOR_WEEKLY_CAP,
-            baselineSet = true,  -- Mark baseline as established
-            lastUpdated = GetServerTime(),
-        }
-    else
-        -- Update current valor but preserve earnedThisWeek (tracked manually)
-        charData.valor.current = currentValor
-        charData.valor.weeklyMax = addon.VALOR_WEEKLY_CAP
-        charData.valor.lastUpdated = GetServerTime()
-    end
+    -- Ensure weeklyMax is set (for UI display)
+    charData.valor.weeklyMax = addon.VALOR_WEEKLY_CAP
 end
 
 -- Update current character's data
@@ -401,7 +401,7 @@ function addon:UpdateCurrentCharacter()
                 current = 0,
                 earnedThisWeek = 0,
                 weeklyMax = addon.VALOR_WEEKLY_CAP,
-                baselineSet = false,
+                lastTrackedValor = nil,  -- Will be set by TrackValorChange()
             },
         }
     end

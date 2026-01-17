@@ -5,6 +5,20 @@ All notable changes to the Weeklies Tracker addon will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.5] - 2026-01-17
+
+### Fixed
+- **New tracking field** - Added `lastTrackedValor` that is ONLY set by `TrackValorChange()`, not by login
+- **True delta tracking** - On first `CURRENCY_DISPLAY_UPDATE`, baseline is recorded without counting as earned
+- **Login no longer sets baseline** - `UpdateCurrentCharacterValor()` just ensures the table exists
+- **Fixed doubling bug** - Previous versions set baseline on login (when API might return 0), then counted full valor as "earned" when API was ready
+
+### How It Works Now
+1. On login, valor table is created but `lastTrackedValor` is nil
+2. First `CURRENCY_DISPLAY_UPDATE` → sets `lastTrackedValor = current`, returns (no gain counted)
+3. Later `CURRENCY_DISPLAY_UPDATE` → compares new valor to `lastTrackedValor`, adds delta to `earnedThisWeek`
+4. Weekly reset → clears `earnedThisWeek` and `lastTrackedValor`
+
 ## [2.0.4] - 2026-01-17
 
 ### Fixed
