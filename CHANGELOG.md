@@ -5,6 +5,19 @@ All notable changes to the Weeklies Tracker addon will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.4] - 2026-01-17
+
+### Fixed
+- **Simplified valor tracking** - `TrackValorChange()` now ONLY tracks deltas, does not set baselines
+- **Baseline separation** - Only `UpdateCurrentCharacterValor()` sets baselines now (removes race condition)
+- **earnedThisWeek logic** - Properly starts at 0, only increases when you actually earn valor during gameplay
+
+### How Weekly Valor Works
+1. On login, your current valor becomes the "baseline" (starting point)
+2. `earnedThisWeek` starts at 0
+3. When you earn valor during gameplay, only the NEW valor is added to `earnedThisWeek`
+4. On weekly reset, `earnedThisWeek` resets to 0 and baseline is cleared
+
 ## [2.0.3] - 2026-01-17
 
 ### Fixed

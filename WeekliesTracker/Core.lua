@@ -32,10 +32,10 @@ local function MigrateDB()
     end
 end
 
--- Reset bad valor data from v2.0.0/v2.0.1/v2.0.2
+-- Reset bad valor data from previous versions
 local function ResetBadValorData(db)
     -- Use version-specific flag so we can run new migrations
-    if db.valorDataResetV203 then return end  -- Already done
+    if db.valorDataResetV204 then return end  -- Already done
 
     -- Reset all characters' valor data to start fresh
     if db.realms then
@@ -52,7 +52,7 @@ local function ResetBadValorData(db)
         end
     end
 
-    db.valorDataResetV203 = true
+    db.valorDataResetV204 = true
 end
 
 -- Initialize database
@@ -182,6 +182,7 @@ function addon:GetStoredWeeklyValor()
 end
 
 -- Track valor changes manually (called when currency updates)
+-- This function ONLY tracks deltas - baseline is set by UpdateCurrentCharacterValor()
 function addon:TrackValorChange()
     local info = self:GetCurrentCharacterInfo()
     if self:IsCharacterBanned(info.fullName) then return end
@@ -189,13 +190,11 @@ function addon:TrackValorChange()
     if not self.db.realms[info.realm][info.name] then return end
 
     local charData = self.db.realms[info.realm][info.name]
-    if not charData.valor then
-        charData.valor = {
-            current = 0,
-            earnedThisWeek = 0,
-            weeklyMax = addon.VALOR_WEEKLY_CAP,
-            baselineSet = false,  -- Track if we've established a baseline
-        }
+
+    -- If valor not initialized or baseline not set, do nothing
+    -- UpdateCurrentCharacterValor() will handle initialization
+    if not charData.valor or not charData.valor.baselineSet then
+        return
     end
 
     -- Get current valor from API
@@ -210,26 +209,17 @@ function addon:TrackValorChange()
         currentValor = amount or 0
     end
 
-    -- If baseline not set, just record current valor (don't count as gained)
-    if not charData.valor.baselineSet then
-        charData.valor.current = currentValor
-        charData.valor.baselineSet = true
-        charData.valor.weeklyMax = addon.VALOR_WEEKLY_CAP
-        charData.valor.lastUpdated = GetServerTime()
-        return
-    end
-
     local previousValor = charData.valor.current or 0
 
-    -- Only track gains AFTER baseline is established
+    -- Only track GAINS (delta) - this is the key logic
+    -- If current > previous, player earned valor since last check
     if currentValor > previousValor then
         local gained = currentValor - previousValor
         charData.valor.earnedThisWeek = (charData.valor.earnedThisWeek or 0) + gained
     end
 
-    -- Update current valor
+    -- Always update current valor to track for next delta
     charData.valor.current = currentValor
-    charData.valor.weeklyMax = addon.VALOR_WEEKLY_CAP
     charData.valor.lastUpdated = GetServerTime()
 end
 
