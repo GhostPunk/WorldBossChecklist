@@ -655,7 +655,7 @@ function addon:ShowContextMenu(anchor, charData)
             text = "Ban Character",
             notCheckable = true,
             func = function()
-                StaticPopup_Show("WT_CONFIRM_BAN", charData.fullName, nil, charData.fullName)
+                addon:ShowBanConfirmDialog(charData.fullName)
             end,
         },
         {
@@ -668,20 +668,75 @@ function addon:ShowContextMenu(anchor, charData)
     EasyMenu(menuList, contextMenu, "cursor", 0, 0, "MENU")
 end
 
--- Static popup for ban confirmation
-StaticPopupDialogs["WT_CONFIRM_BAN"] = {
-    text = "Ban %s?\n\nThis character will be removed and won't be added again when you log in.",
-    button1 = "Yes",
-    button2 = "No",
-    OnAccept = function(self, data)
-        addon:BanCharacter(data)
-        addon:UpdateUI()
-    end,
-    timeout = 0,
-    whileDead = true,
-    hideOnEscape = true,
-    preferredIndex = 3,
-}
+-- Custom ban confirmation dialog
+local banConfirmDialog = nil
+
+local function CreateBanConfirmDialog()
+    local dialog = CreateFrame("Frame", "WeekliesTrackerBanConfirm", UIParent, "BackdropTemplate")
+    dialog:SetSize(300, 120)
+    dialog:SetPoint("CENTER")
+    dialog:SetFrameStrata("DIALOG")
+    dialog:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 1,
+    })
+    dialog:SetBackdropColor(0.1, 0.1, 0.1, 0.95)
+    dialog:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+    dialog:EnableMouse(true)
+    dialog:SetMovable(true)
+    dialog:RegisterForDrag("LeftButton")
+    dialog:SetScript("OnDragStart", dialog.StartMoving)
+    dialog:SetScript("OnDragStop", dialog.StopMovingOrSizing)
+    dialog:Hide()
+
+    -- Text
+    dialog.text = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    dialog.text:SetPoint("TOP", dialog, "TOP", 0, -15)
+    dialog.text:SetWidth(270)
+    dialog.text:SetJustifyH("CENTER")
+
+    -- Yes button
+    dialog.yesBtn = CreateFrame("Button", nil, dialog, "UIPanelButtonTemplate")
+    dialog.yesBtn:SetSize(80, 22)
+    dialog.yesBtn:SetPoint("BOTTOMLEFT", dialog, "BOTTOMLEFT", 40, 15)
+    dialog.yesBtn:SetText("Yes")
+    dialog.yesBtn:SetScript("OnClick", function()
+        if dialog.charFullName then
+            addon:BanCharacter(dialog.charFullName)
+            addon:UpdateUI()
+        end
+        dialog:Hide()
+    end)
+
+    -- No button
+    dialog.noBtn = CreateFrame("Button", nil, dialog, "UIPanelButtonTemplate")
+    dialog.noBtn:SetSize(80, 22)
+    dialog.noBtn:SetPoint("BOTTOMRIGHT", dialog, "BOTTOMRIGHT", -40, 15)
+    dialog.noBtn:SetText("No")
+    dialog.noBtn:SetScript("OnClick", function()
+        dialog:Hide()
+    end)
+
+    -- Close on escape
+    dialog:SetScript("OnKeyDown", function(self, key)
+        if key == "ESCAPE" then
+            self:Hide()
+        end
+    end)
+
+    return dialog
+end
+
+function addon:ShowBanConfirmDialog(fullName)
+    if not banConfirmDialog then
+        banConfirmDialog = CreateBanConfirmDialog()
+    end
+    banConfirmDialog.charFullName = fullName
+    banConfirmDialog.text:SetText("Ban " .. fullName .. "?\n\nThis character will be removed and won't be added again when you log in.")
+    banConfirmDialog:Show()
+    banConfirmDialog:Raise()
+end
 
 -- Initialize the UI
 function addon:InitializeUI()
@@ -1079,7 +1134,7 @@ function addon:InitializeTitanPanel()
     titanButton.registry = {
         id = TITAN_ID,
         category = "Information",
-        version = "2.1.1",
+        version = "2.1.2",
         menuText = "Weeklies Tracker",
         buttonTextFunction = "TitanPanelWeekliesTrackerButton_GetButtonText",
         tooltipTitle = "Weeklies Tracker",
