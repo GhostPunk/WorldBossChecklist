@@ -704,6 +704,7 @@ local function CreateBanConfirmDialog()
     dialog.yesBtn:SetScript("OnClick", function()
         if dialog.charFullName then
             addon:BanCharacter(dialog.charFullName)
+            addon:UpdateCharacterList()
             addon:UpdateUI()
         end
         dialog:Hide()
@@ -1755,7 +1756,7 @@ function addon:UpdateCharacterList()
             end)
 
             row.banBtn:SetScript("OnClick", function()
-                StaticPopup_Show("WT_CONFIRM_BAN_SETTINGS", charData.fullName)
+                addon:ShowBanConfirmDialog(charData.fullName)
             end)
 
             row:ClearAllPoints()
@@ -1776,21 +1777,6 @@ function addon:UpdateCharacterList()
     settingsPanel.unbanAllBtn:SetEnabled(bannedCount > 0)
 end
 
--- Static popup for ban from settings
-StaticPopupDialogs["WT_CONFIRM_BAN_SETTINGS"] = {
-    text = "Ban %s?\n\nThis character will be removed and won't be added again when you log in.",
-    button1 = "Yes",
-    button2 = "No",
-    OnAccept = function(self, data)
-        addon:BanCharacter(data)
-        addon:UpdateCharacterList()
-        addon:UpdateUI()
-    end,
-    timeout = 0,
-    whileDead = true,
-    hideOnEscape = true,
-    preferredIndex = 3,
-}
 
 function addon:UpdateSettingsPanel()
     if not settingsPanel then return end
