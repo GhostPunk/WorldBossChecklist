@@ -625,9 +625,66 @@ local function UpdateValorCharacterRow(row, charData)
     end
 end
 
--- Create context menu
+-- Create custom context menu
 local function CreateContextMenu()
-    local menu = CreateFrame("Frame", "WeekliesTrackerContextMenu", UIParent, "UIDropDownMenuTemplate")
+    local menu = CreateFrame("Frame", "WeekliesTrackerContextMenu", UIParent, "BackdropTemplate")
+    menu:SetSize(150, 90)
+    menu:SetFrameStrata("DIALOG")
+    menu:SetFrameLevel(100)
+    menu:SetBackdrop({
+        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
+        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+        edgeSize = 16,
+        insets = { left = 4, right = 4, top = 4, bottom = 4 },
+    })
+    menu:Hide()
+
+    -- Title
+    menu.title = menu:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    menu.title:SetPoint("TOP", menu, "TOP", 0, -10)
+    menu.title:SetTextColor(1, 0.82, 0)
+
+    -- Delete button
+    menu.deleteBtn = CreateFrame("Button", nil, menu)
+    menu.deleteBtn:SetSize(130, 20)
+    menu.deleteBtn:SetPoint("TOP", menu, "TOP", 0, -28)
+    menu.deleteBtn.text = menu.deleteBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    menu.deleteBtn.text:SetPoint("LEFT", menu.deleteBtn, "LEFT", 5, 0)
+    menu.deleteBtn.text:SetText("Delete Character")
+    menu.deleteBtn:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
+
+    -- Ban button
+    menu.banBtn = CreateFrame("Button", nil, menu)
+    menu.banBtn:SetSize(130, 20)
+    menu.banBtn:SetPoint("TOP", menu.deleteBtn, "BOTTOM", 0, 0)
+    menu.banBtn.text = menu.banBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    menu.banBtn.text:SetPoint("LEFT", menu.banBtn, "LEFT", 5, 0)
+    menu.banBtn.text:SetText("Ban Character")
+    menu.banBtn:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
+
+    -- Cancel button
+    menu.cancelBtn = CreateFrame("Button", nil, menu)
+    menu.cancelBtn:SetSize(130, 20)
+    menu.cancelBtn:SetPoint("TOP", menu.banBtn, "BOTTOM", 0, 0)
+    menu.cancelBtn.text = menu.cancelBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    menu.cancelBtn.text:SetPoint("LEFT", menu.cancelBtn, "LEFT", 5, 0)
+    menu.cancelBtn.text:SetText("Cancel")
+    menu.cancelBtn.text:SetTextColor(0.7, 0.7, 0.7)
+    menu.cancelBtn:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
+    menu.cancelBtn:SetScript("OnClick", function() menu:Hide() end)
+
+    -- Hide when clicking elsewhere
+    menu:SetScript("OnShow", function()
+        menu:SetScript("OnUpdate", function(self)
+            if not MouseIsOver(self) and IsMouseButtonDown("LeftButton") then
+                self:Hide()
+            end
+        end)
+    end)
+    menu:SetScript("OnHide", function(self)
+        self:SetScript("OnUpdate", nil)
+    end)
+
     return menu
 end
 
@@ -637,35 +694,26 @@ function addon:ShowContextMenu(anchor, charData)
         contextMenu = CreateContextMenu()
     end
 
-    local menuList = {
-        {
-            text = charData.name .. "-" .. charData.realm,
-            isTitle = true,
-            notCheckable = true,
-        },
-        {
-            text = "Delete Character",
-            notCheckable = true,
-            func = function()
-                addon:DeleteCharacter(charData.fullName)
-                addon:UpdateUI()
-            end,
-        },
-        {
-            text = "Ban Character",
-            notCheckable = true,
-            func = function()
-                addon:ShowBanConfirmDialog(charData.fullName)
-            end,
-        },
-        {
-            text = "Cancel",
-            notCheckable = true,
-            func = function() end,
-        },
-    }
+    contextMenu.title:SetText(charData.name)
 
-    EasyMenu(menuList, contextMenu, "cursor", 0, 0, "MENU")
+    contextMenu.deleteBtn:SetScript("OnClick", function()
+        addon:DeleteCharacter(charData.fullName)
+        addon:UpdateUI()
+        contextMenu:Hide()
+    end)
+
+    contextMenu.banBtn:SetScript("OnClick", function()
+        contextMenu:Hide()
+        addon:ShowBanConfirmDialog(charData.fullName)
+    end)
+
+    -- Position at cursor
+    local x, y = GetCursorPosition()
+    local scale = UIParent:GetEffectiveScale()
+    contextMenu:ClearAllPoints()
+    contextMenu:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x / scale, y / scale)
+    contextMenu:Show()
+    contextMenu:Raise()
 end
 
 -- Custom ban confirmation dialog
