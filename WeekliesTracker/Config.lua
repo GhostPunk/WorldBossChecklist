@@ -256,11 +256,6 @@ local function SlashHandler(msg)
     elseif cmd == "dailies" or cmd == "daily" then
         addon.db.options.trackDailies = not addon.db.options.trackDailies
         Print("Daily dungeon tracking: " .. (addon.db.options.trackDailies and "enabled" or "disabled"))
-        -- Update visibility of daily section
-        if addon.mainFrame and addon.mainFrame.valorDailySection then
-            local currentTab = addon.db.options.mainWindowTab or 1
-            addon.mainFrame.valorDailySection:SetShown(currentTab == 2 and addon.db.options.trackDailies)
-        end
         addon:UpdateUI()
 
     elseif cmd == "level" then

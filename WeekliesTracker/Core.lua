@@ -201,20 +201,24 @@ function addon:TrackValorChange()
         }
     end
 
-    -- Get totalEarned from API (lifetime earned, never decreases even when spent)
+    -- Get values from API
     local totalEarned = 0
     local currentValor = 0
+    local maxQuantity = 0
     if C_CurrencyInfo and C_CurrencyInfo.GetCurrencyInfo then
         local currInfo = C_CurrencyInfo.GetCurrencyInfo(addon.VALOR_CURRENCY_ID)
         if currInfo then
             totalEarned = currInfo.totalEarned or 0
             currentValor = currInfo.quantity or 0
+            maxQuantity = currInfo.maxQuantity or 0
         end
     end
 
-    -- Update display value (current balance)
+    -- Update display values
     charData.valor.current = currentValor
     charData.valor.weeklyMax = addon.VALOR_WEEKLY_CAP
+    charData.valor.totalEarned = totalEarned
+    charData.valor.maxQuantity = maxQuantity
 
     -- weekStartTotal = totalEarned at the start of the week
     -- If not set, this is first time seeing this character this week
@@ -322,6 +326,13 @@ function addon:ResetAllDailies()
     end
 end
 
+-- Check if daily dungeon bonus has been claimed using LFG API
+function addon:IsDailyDungeonDone(dungeonID)
+    if not GetLFGDungeonRewards then return false end
+    local doneToday = GetLFGDungeonRewards(dungeonID)
+    return doneToday == true
+end
+
 -- Update current character's daily dungeon status
 function addon:UpdateCurrentCharacterDailies()
     local info = self:GetCurrentCharacterInfo()
@@ -336,9 +347,9 @@ function addon:UpdateCurrentCharacterDailies()
         charData.dailies = {}
     end
 
-    -- Check each daily dungeon quest (first random of the day)
+    -- Check each daily dungeon using GetLFGDungeonRewards API
     for _, dungeon in ipairs(addon.DAILY_DUNGEONS) do
-        charData.dailies[dungeon.key] = self:IsQuestDone(dungeon.questID)
+        charData.dailies[dungeon.key] = self:IsDailyDungeonDone(dungeon.dungeonID)
     end
 end
 
@@ -353,6 +364,17 @@ function addon:GetMaxValorThisWeek()
 
     -- How much more you can earn + current balance
     return (maxQuantity - totalEarned) + quantity
+end
+
+-- Get total earned and max quantity (for display)
+function addon:GetValorTotalAndMax()
+    local currInfo = C_CurrencyInfo and C_CurrencyInfo.GetCurrencyInfo(addon.VALOR_CURRENCY_ID)
+    if not currInfo then return 0, 0 end
+
+    local totalEarned = currInfo.totalEarned or 0
+    local maxQuantity = currInfo.maxQuantity or 0
+
+    return totalEarned, maxQuantity
 end
 
 -- Get seconds until daily reset (for display)

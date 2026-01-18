@@ -5,24 +5,28 @@ addon.VALOR_CURRENCY_ID = 396
 addon.VALOR_WEEKLY_CAP = 1600  -- Fallback if API fails
 
 -- Daily Dungeon Bonus definitions (first random queue of the day)
+-- Uses LFG Dungeon IDs with GetLFGDungeonRewards() API, NOT quest IDs!
 addon.DAILY_DUNGEONS = {
     {
         key = "Heroic",
-        name = "First Heroic",
-        questID = 31614,
-        valor = 200,
+        name = "Heroic",
+        dungeonID = 462,  -- Random Mists of Pandaria Heroic
+        valor = 100,
+        abbrev = "H",
     },
     {
         key = "Scenario",
-        name = "First Scenario",
-        questID = 31616,
-        valor = 40,
+        name = "Scenario",
+        dungeonID = 464,  -- Random Mists of Pandaria Scenario (needs verification)
+        valor = 100,
+        abbrev = "S",
     },
     {
         key = "Celestial",
-        name = "First Celestial",
-        questID = 91622,
-        valor = 240,
+        name = "Celestial",
+        dungeonID = 3034,  -- Random Mists of Pandaria Celestial
+        valor = 200,
+        abbrev = "C",
     },
 }
 
