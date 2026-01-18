@@ -19,6 +19,7 @@ local function PrintHelp()
     print("  |cffffcc00/wt lock|r - Toggle frame lock")
     print("  |cffffcc00/wt unkilled|r - Toggle 'show unkilled only'")
     print("  |cffffcc00/wt notcapped|r - Toggle 'show not capped only'")
+    print("  |cffffcc00/wt dailies|r - Toggle daily dungeon tracking")
     print("  |cffffcc00/wt level <number>|r - Set minimum level filter (0 to disable)")
     print("  |cffffcc00/wt boss <name>|r - Toggle tracking for a boss")
     print("  |cffffcc00/wt banned|r - List banned characters")
@@ -34,6 +35,7 @@ local function PrintConfig()
     print("  Show Unkilled Only (Bosses): " .. (opts.showUnkilledOnly and "|cff00ff00Yes|r" or "|cffff0000No|r"))
     print("  Show Not Capped Only (Valor): " .. (opts.showNotCappedOnly and "|cff00ff00Yes|r" or "|cffff0000No|r"))
     print("  Track Valor: " .. (opts.trackValor ~= false and "|cff00ff00Yes|r" or "|cffff0000No|r"))
+    print("  Track Daily Dungeons: " .. (opts.trackDailies ~= false and "|cff00ff00Yes|r" or "|cffff0000No|r"))
     print("  Level Requirement: " .. (opts.levelRequirement > 0 and opts.levelRequirement or "|cff888888Disabled|r"))
     print("  Frame Scale: " .. string.format("%.1f", opts.frameScale))
     print("  Frame Locked: " .. (opts.locked and "|cff00ff00Yes|r" or "|cffff0000No|r"))
@@ -249,6 +251,16 @@ local function SlashHandler(msg)
     elseif cmd == "notcapped" then
         addon.db.options.showNotCappedOnly = not addon.db.options.showNotCappedOnly
         Print("Show not capped only: " .. (addon.db.options.showNotCappedOnly and "enabled" or "disabled"))
+        addon:UpdateUI()
+
+    elseif cmd == "dailies" or cmd == "daily" then
+        addon.db.options.trackDailies = not addon.db.options.trackDailies
+        Print("Daily dungeon tracking: " .. (addon.db.options.trackDailies and "enabled" or "disabled"))
+        -- Update visibility of daily section
+        if addon.mainFrame and addon.mainFrame.valorDailySection then
+            local currentTab = addon.db.options.mainWindowTab or 1
+            addon.mainFrame.valorDailySection:SetShown(currentTab == 2 and addon.db.options.trackDailies)
+        end
         addon:UpdateUI()
 
     elseif cmd == "level" then

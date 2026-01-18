@@ -205,6 +205,7 @@ local function CreateMainFrame()
         frame.valorContent:SetShown(tabId == MAIN_TAB_VALOR)
         frame.bossHeaders:SetShown(tabId == MAIN_TAB_BOSSES)
         frame.valorHeaders:SetShown(tabId == MAIN_TAB_VALOR)
+        frame.valorDailySection:SetShown(tabId == MAIN_TAB_VALOR and addon.db.options.trackDailies)
         addon:UpdateUI()
     end
     frame.SwitchMainTab = SwitchMainTab
@@ -233,11 +234,71 @@ local function CreateMainFrame()
     bossHeaders.tooltipFrames = {}
     frame.bossHeaders = bossHeaders
 
-    -- Valor headers
+    -- Valor daily section (shows daily dungeon bonuses)
+    local valorDailySection = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+    valorDailySection:SetHeight(80)
+    valorDailySection:SetPoint("TOPLEFT", tabContainer, "BOTTOMLEFT", 0, -2)
+    valorDailySection:SetPoint("TOPRIGHT", tabContainer, "BOTTOMRIGHT", 0, -2)
+    valorDailySection:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+    })
+    valorDailySection:SetBackdropColor(0.12, 0.12, 0.12, 0.9)
+    valorDailySection:Hide()
+    frame.valorDailySection = valorDailySection
+
+    -- Daily section title
+    valorDailySection.title = valorDailySection:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    valorDailySection.title:SetPoint("TOPLEFT", valorDailySection, "TOPLEFT", 10, -6)
+    valorDailySection.title:SetText("Daily Bonuses")
+    valorDailySection.title:SetTextColor(1, 0.82, 0)
+
+    -- Daily reset countdown
+    valorDailySection.resetText = valorDailySection:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    valorDailySection.resetText:SetPoint("TOPRIGHT", valorDailySection, "TOPRIGHT", -10, -6)
+    valorDailySection.resetText:SetTextColor(0.6, 0.6, 0.6)
+
+    -- Create daily dungeon rows
+    valorDailySection.dungeonRows = {}
+    local dailyYOffset = -22
+    for i, dungeon in ipairs(addon.DAILY_DUNGEONS) do
+        local row = CreateFrame("Frame", nil, valorDailySection)
+        row:SetHeight(16)
+        row:SetPoint("TOPLEFT", valorDailySection, "TOPLEFT", 10, dailyYOffset)
+        row:SetPoint("TOPRIGHT", valorDailySection, "TOPRIGHT", -10, dailyYOffset)
+
+        row.nameText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        row.nameText:SetPoint("LEFT", row, "LEFT", 0, 0)
+        row.nameText:SetText(dungeon.name .. ":")
+        row.nameText:SetTextColor(0.8, 0.8, 0.8)
+
+        row.statusText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        row.statusText:SetPoint("LEFT", row, "LEFT", 100, 0)
+        row.statusText:SetWidth(80)
+
+        row.valorText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        row.valorText:SetPoint("LEFT", row, "LEFT", 180, 0)
+        row.valorText:SetText("(+" .. dungeon.valor .. " VP)")
+        row.valorText:SetTextColor(0.5, 0.5, 0.5)
+
+        valorDailySection.dungeonRows[i] = row
+        dailyYOffset = dailyYOffset - 18
+    end
+
+    -- Max valor section
+    valorDailySection.maxValorLabel = valorDailySection:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    valorDailySection.maxValorLabel:SetPoint("BOTTOMLEFT", valorDailySection, "BOTTOMLEFT", 10, 6)
+    valorDailySection.maxValorLabel:SetText("Max Valor This Week:")
+    valorDailySection.maxValorLabel:SetTextColor(0.7, 0.7, 0.7)
+
+    valorDailySection.maxValorText = valorDailySection:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    valorDailySection.maxValorText:SetPoint("LEFT", valorDailySection.maxValorLabel, "RIGHT", 5, 0)
+    valorDailySection.maxValorText:SetTextColor(1, 1, 1)
+
+    -- Valor headers (positioned below daily section)
     local valorHeaders = CreateFrame("Frame", nil, frame)
     valorHeaders:SetHeight(ROW_HEIGHT)
-    valorHeaders:SetPoint("TOPLEFT", tabContainer, "BOTTOMLEFT", 0, -2)
-    valorHeaders:SetPoint("TOPRIGHT", tabContainer, "BOTTOMRIGHT", 0, -2)
+    valorHeaders:SetPoint("TOPLEFT", valorDailySection, "BOTTOMLEFT", 0, -2)
+    valorHeaders:SetPoint("TOPRIGHT", valorDailySection, "BOTTOMRIGHT", 0, -2)
     valorHeaders.bg = valorHeaders:CreateTexture(nil, "BACKGROUND")
     valorHeaders.bg:SetAllPoints()
     valorHeaders.bg:SetColorTexture(0.15, 0.15, 0.15, 0.9)
@@ -630,6 +691,7 @@ function addon:InitializeUI()
     mainFrame.valorContent:SetShown(initialTab == MAIN_TAB_VALOR)
     mainFrame.bossHeaders:SetShown(initialTab == MAIN_TAB_BOSSES)
     mainFrame.valorHeaders:SetShown(initialTab == MAIN_TAB_VALOR)
+    mainFrame.valorDailySection:SetShown(initialTab == MAIN_TAB_VALOR and addon.db.options.trackDailies)
 
     -- Start hidden
     mainFrame:Hide()
@@ -713,9 +775,70 @@ local function UpdateBossContent()
     return totalHeight
 end
 
+-- Format time for display (e.g., "5h 30m")
+local function FormatTime(seconds)
+    if seconds <= 0 then return "Now" end
+    local hours = math.floor(seconds / 3600)
+    local mins = math.floor((seconds % 3600) / 60)
+    if hours > 0 then
+        return string.format("%dh %dm", hours, mins)
+    else
+        return string.format("%dm", mins)
+    end
+end
+
+-- Update the daily section of the valor tab
+local function UpdateDailySection()
+    local dailySection = mainFrame.valorDailySection
+    if not dailySection:IsShown() then return end
+
+    -- Get current character info for daily status
+    local info = addon:GetCurrentCharacterInfo()
+    local charData = nil
+    if addon.db.realms[info.realm] and addon.db.realms[info.realm][info.name] then
+        charData = addon.db.realms[info.realm][info.name]
+    end
+
+    -- Update daily reset countdown
+    local secsUntilReset = addon:GetSecondsUntilDailyReset()
+    dailySection.resetText:SetText("Resets in " .. FormatTime(secsUntilReset))
+
+    -- Update each daily dungeon row
+    for i, dungeon in ipairs(addon.DAILY_DUNGEONS) do
+        local row = dailySection.dungeonRows[i]
+        if row then
+            local isDone = false
+            if charData and charData.dailies then
+                isDone = charData.dailies[dungeon.key]
+            end
+
+            if isDone then
+                row.statusText:SetText(AtlasIcon(addon.ICON_KILLED, 12) .. " Done")
+                row.statusText:SetTextColor(0, 1, 0)
+                row.valorText:SetTextColor(0.3, 0.3, 0.3)
+            else
+                row.statusText:SetText(AtlasIcon(addon.ICON_NOT_KILLED, 12) .. " Available")
+                row.statusText:SetTextColor(1, 0.8, 0)
+                row.valorText:SetTextColor(0.6, 0.6, 0.6)
+            end
+        end
+    end
+
+    -- Update max valor display
+    local maxValor = addon:GetMaxValorThisWeek()
+    if maxValor > 0 then
+        dailySection.maxValorText:SetText(tostring(maxValor))
+    else
+        dailySection.maxValorText:SetText("--")
+    end
+end
+
 -- Update valor content
 local function UpdateValorContent()
     local content = mainFrame.valorContent
+
+    -- Update daily section first
+    UpdateDailySection()
 
     -- Clear old rows
     for _, row in ipairs(valorRows) do
@@ -807,6 +930,10 @@ function addon:UpdateUI()
 
     -- Update frame height
     local frameHeight = HEADER_HEIGHT + TAB_HEIGHT + ROW_HEIGHT + totalHeight + 14
+    -- Add daily section height if on valor tab and tracking dailies
+    if currentTab == MAIN_TAB_VALOR and addon.db.options.trackDailies then
+        frameHeight = frameHeight + 82  -- Height of daily section + margin
+    end
     frameHeight = math.max(frameHeight, 100)
     mainFrame:SetHeight(frameHeight)
 end
@@ -937,6 +1064,17 @@ function addon:InitializeMinimapButton()
             local color = GetValorProgressColor(earned, max)
             GameTooltip:AddLine(string.format("Valor: |cff%02x%02x%02x%d/%d|r",
                 color[1] * 255, color[2] * 255, color[3] * 255, earned, max), 0.8, 0.8, 0.8)
+
+            -- Show daily dungeon bonuses if tracking enabled
+            if addon.db.options.trackDailies then
+                GameTooltip:AddLine(" ")
+                GameTooltip:AddLine("Daily Bonuses:", 1, 0.82, 0)
+                local dailies = charData.dailies or {}
+                for _, dungeon in ipairs(addon.DAILY_DUNGEONS) do
+                    local status = dailies[dungeon.key] and "|cff00ff00Done|r" or "|cffffff00Available|r"
+                    GameTooltip:AddLine(string.format("  %s: %s", dungeon.name, status), 0.8, 0.8, 0.8)
+                end
+            end
         end
 
         GameTooltip:AddLine(" ")
@@ -990,7 +1128,7 @@ function addon:InitializeTitanPanel()
     titanButton.registry = {
         id = TITAN_ID,
         category = "Information",
-        version = "2.0.0",
+        version = "2.1.0",
         menuText = "Weeklies Tracker",
         buttonTextFunction = "TitanPanelWeekliesTrackerButton_GetButtonText",
         tooltipTitle = "Weeklies Tracker",
@@ -1043,6 +1181,18 @@ function TitanPanelWeekliesTrackerButton_GetTooltipText()
         local color = GetValorProgressColor(earned, max)
         table.insert(lines, string.format("|cffffffffValor:|r |cff%02x%02x%02x%d/%d|r",
             color[1] * 255, color[2] * 255, color[3] * 255, earned, max))
+
+        -- Daily dungeon info
+        if addon.db.options.trackDailies then
+            table.insert(lines, " ")
+            table.insert(lines, "|cffffff00Daily Bonuses:|r")
+            local dailies = charData.dailies or {}
+            for _, dungeon in ipairs(addon.DAILY_DUNGEONS) do
+                local status = dailies[dungeon.key] and "|cff00ff00Done|r" or "|cffffff00Available|r"
+                table.insert(lines, "  " .. dungeon.name .. ": " .. status)
+            end
+        end
+
         table.insert(lines, " ")
 
         -- Boss info
@@ -1411,6 +1561,22 @@ function addon:CreateSettingsPanel()
     panel.cbTrackValor = cbTrackValor
     yPos = yPos - 30
 
+    -- Track Daily Dungeons
+    local cbTrackDailies = CreateCheckbox(valorContent, "Track Daily Dungeons",
+        "Show daily dungeon bonus status (First Heroic, Scenario, Celestial)",
+        function(checked)
+            addon.db.options.trackDailies = checked
+            -- Update visibility of daily section
+            if addon.mainFrame and addon.mainFrame.valorDailySection then
+                local currentTab = addon.db.options.mainWindowTab or 1
+                addon.mainFrame.valorDailySection:SetShown(currentTab == 2 and checked)
+            end
+            addon:UpdateUI()
+        end)
+    cbTrackDailies:SetPoint("TOPLEFT", valorContent, "TOPLEFT", 20, yPos)
+    panel.cbTrackDailies = cbTrackDailies
+    yPos = yPos - 30
+
     -- Show Not Capped Only
     local cbNotCapped = CreateCheckbox(valorContent, "Show Not Capped Only",
         "Only show characters that haven't reached the weekly valor cap",
@@ -1641,6 +1807,7 @@ function addon:UpdateSettingsPanel()
     end
 
     settingsPanel.cbTrackValor:SetChecked(opts.trackValor ~= false)
+    settingsPanel.cbTrackDailies:SetChecked(opts.trackDailies ~= false)
     settingsPanel.cbNotCapped:SetChecked(opts.showNotCappedOnly)
 end
 

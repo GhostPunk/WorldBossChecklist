@@ -4,6 +4,28 @@ local addonName, addon = ...
 addon.VALOR_CURRENCY_ID = 396
 addon.VALOR_WEEKLY_CAP = 1600  -- Fallback if API fails
 
+-- Daily Dungeon Bonus definitions (first random queue of the day)
+addon.DAILY_DUNGEONS = {
+    {
+        key = "Heroic",
+        name = "First Heroic",
+        questID = 31614,
+        valor = 200,
+    },
+    {
+        key = "Scenario",
+        name = "First Scenario",
+        questID = 31616,
+        valor = 40,
+    },
+    {
+        key = "Celestial",
+        name = "First Celestial",
+        questID = 91622,
+        valor = 240,
+    },
+}
+
 -- World Boss definitions for Mists of Pandaria
 addon.WORLD_BOSSES = {
     {
@@ -84,6 +106,8 @@ addon.DEFAULT_OPTIONS = {
     trackValor = true,
     showNotCappedOnly = false,
     mainWindowTab = 1,  -- 1 = Bosses, 2 = Valor
+    -- Daily dungeon tracking
+    trackDailies = true,
 }
 
 -- Atlas icons for kill status

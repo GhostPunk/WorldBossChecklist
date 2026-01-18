@@ -284,6 +284,86 @@ function addon:ResetAllValor()
     end
 end
 
+-- Get the next daily reset time
+function addon:GetDailyResetTime()
+    local secs = GetQuestResetTime()
+    if type(secs) == "number" and secs > 0 then
+        return GetServerTime() + secs
+    end
+    return nil
+end
+
+-- Check and handle daily reset
+function addon:CheckDailyReset()
+    local now = GetServerTime()
+    local nextReset = self:GetDailyResetTime()
+
+    -- First time setup
+    if not self.db.nextDailyResetTime then
+        self.db.nextDailyResetTime = nextReset
+        return
+    end
+
+    -- Check if we've passed the reset time
+    if now >= self.db.nextDailyResetTime then
+        self:ResetAllDailies()
+        self.db.nextDailyResetTime = nextReset or (now + 24 * 60 * 60)
+    end
+end
+
+-- Reset all daily dungeon completions for all characters
+function addon:ResetAllDailies()
+    for realmName, characters in pairs(self.db.realms) do
+        for charName, charData in pairs(characters) do
+            if charData.dailies then
+                charData.dailies = {}
+            end
+        end
+    end
+end
+
+-- Update current character's daily dungeon status
+function addon:UpdateCurrentCharacterDailies()
+    local info = self:GetCurrentCharacterInfo()
+
+    if self:IsCharacterBanned(info.fullName) then return end
+    if not self.db.realms[info.realm] then return end
+    if not self.db.realms[info.realm][info.name] then return end
+
+    local charData = self.db.realms[info.realm][info.name]
+
+    if not charData.dailies then
+        charData.dailies = {}
+    end
+
+    -- Check each daily dungeon quest (first random of the day)
+    for _, dungeon in ipairs(addon.DAILY_DUNGEONS) do
+        charData.dailies[dungeon.key] = self:IsQuestDone(dungeon.questID)
+    end
+end
+
+-- Get max valor earnable this week (account-wide)
+function addon:GetMaxValorThisWeek()
+    local currInfo = C_CurrencyInfo and C_CurrencyInfo.GetCurrencyInfo(addon.VALOR_CURRENCY_ID)
+    if not currInfo then return 0 end
+
+    local maxQuantity = currInfo.maxQuantity or 0  -- Total cap (increases weekly)
+    local totalEarned = currInfo.totalEarned or 0
+    local quantity = currInfo.quantity or 0
+
+    -- How much more you can earn + current balance
+    return (maxQuantity - totalEarned) + quantity
+end
+
+-- Get seconds until daily reset (for display)
+function addon:GetSecondsUntilDailyReset()
+    local secs = GetQuestResetTime()
+    if type(secs) == "number" and secs > 0 then
+        return secs
+    end
+    return 0
+end
+
 -- Get current character info
 function addon:GetCurrentCharacterInfo()
     local name = UnitName("player")
@@ -393,6 +473,7 @@ function addon:UpdateCurrentCharacter()
                 weeklyMax = addon.VALOR_WEEKLY_CAP,
                 weekStartTotal = nil,  -- Will be set by TrackValorChange()
             },
+            dailies = {},
         }
     end
 
@@ -410,6 +491,9 @@ function addon:UpdateCurrentCharacter()
 
     -- Update valor info
     self:UpdateCurrentCharacterValor()
+
+    -- Update daily dungeon status
+    self:UpdateCurrentCharacterDailies()
 end
 
 -- Get all characters sorted by realm
@@ -432,6 +516,7 @@ function addon:GetAllCharacters()
                 lastSeen = charData.lastSeen,
                 bosses = charData.bosses or {},
                 valor = charData.valor or {},
+                dailies = charData.dailies or {},
             })
         end
 
@@ -525,6 +610,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
         if loadedAddon == addonName then
             InitializeDB()
             addon:CheckWeeklyReset()
+            addon:CheckDailyReset()
             addon:UpdateCurrentCharacter()
 
             -- Initialize UI after a short delay to ensure everything is loaded
@@ -542,6 +628,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
 
     elseif event == "PLAYER_ENTERING_WORLD" then
         addon:CheckWeeklyReset()
+        addon:CheckDailyReset()
         addon:UpdateCurrentCharacter()
         if addon.UpdateUI then
             addon:UpdateUI()

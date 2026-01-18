@@ -1,8 +1,8 @@
 ## Interface: 65302
 ## Title: Weeklies Tracker
-## Notes: Track world boss kills and valor points across all your characters
+## Notes: Track world boss kills, daily dungeon bonuses, and valor points across all your characters
 ## Author: Claude (based on Merfin's WeakAura)
-## Version: 2.0.6
+## Version: 2.1.0
 ## SavedVariables: WeekliesTrackerDB
 
 Data.lua
